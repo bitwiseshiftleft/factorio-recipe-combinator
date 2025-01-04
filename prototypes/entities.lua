@@ -51,6 +51,27 @@ data:extend{
         type = "selector-combinator",
         name = "recipe-combinator-component-selector-combinator"
     }},
+    {
+        type = "constant-combinator",
+        name = "recipe-combinator-component-constant-combinator",
+        flags = { "not-blueprintable", "hide-alt-info", "placeable-off-grid", "not-on-map" },
+        destructible = false,
+        max_health = 1,
+        minable = nil,
+        collision_box = {{-0.45,-0.45},{0.45,0.45}},
+        selection_box = {{-0.5,-0.5},{0.5,0.5}},
+        collision_mask = {layers={}},
+        hidden = true,
+        selectable_in_game = false,
+        hidden_in_factoripedia = true,
+        item_slot_count = 20,
+        sprites = empty_sheet_4,
+        circuit_wire_connection_points = connection_points,
+        -- circuit_connector_sprites = connector_definitions.sprites,
+        circuit_wire_max_distance = 4,
+        draw_circuit_wires = false,
+        activity_led_light_offsets = { {0,0},{0,0},{0,0},{0,0} }
+    },
     util.merge{data.raw["arithmetic-combinator"]["arithmetic-combinator"],{
         name = "recipe-combinator-main",
         icons = {{

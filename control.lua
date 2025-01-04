@@ -2,6 +2,7 @@
 local undo = require "lualib.undo"
 local event = require "lualib.event"
 local gui = require "lualib.gui"
+local circuit = require "lualib.circuit"
 local disable_picker_dollies = require "lualib.disable_picker_dollies"
 disable_picker_dollies.disable_picker_dollies()
 
@@ -45,7 +46,8 @@ local function on_built(ev)
     local entity = ev.created_entity
     if entity == nil then entity = ev.entity end
     -- TODO
-    game.print("Event TODO: Entity built")
+    if entity == nil or entity.name ~= "recipe-combinator-main" then return end
+    circuit.build_recipe_info_combinator(entity)
 end
 
 local function on_settings_pasted(ev)
@@ -62,7 +64,7 @@ local function on_gui_opened(ev)
     -- Cribbed from Cybersyn combinator
     if entity.valid and name_or_ghost_name(entity) == "recipe-combinator-main" then
         gui.open(ev.player_index, entity)
-    elseif player.gui.screen[gui.WINDOW_ID]
+    elseif player.gui.screen[gui.WINDOW_ID] then
         gui.close(ev.player_index)
         return
     end

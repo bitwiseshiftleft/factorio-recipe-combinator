@@ -1,7 +1,8 @@
 local util = require "__core__.lualib.util"
-local myutil = require "lualib.util"
 local M = {}
 
+-- Cribbed from Circuit-Controlled Router
+local HAVE_QUALITY = script.feature_flags.quality and script.feature_flags.space_travel
 
 -- Wire definitions
 local WRED   = defines.wire_type.red
@@ -22,16 +23,6 @@ local NNONE  = {green=false,red=false}
 local EACH = {type="virtual",name="signal-each"}
 local ANYTHING = {type="virtual",name="signal-anything"}
 local EVERYTHING = {type="virtual",name="signal-everything"}
-local THRESHOLD = {type="virtual",name="router-signal-threshold"}
-local DEFAULT = {type="virtual",name="router-signal-default"}
-local ZERO = {type="virtual",name="signal-0"}
-local SIGC = {type="virtual",name="signal-C"}
-
-local LINK  = {type="virtual",name="router-signal-link"}
-local LEAF  = {type="virtual",name="router-signal-leaf"}
-local POWER = LEAF -- I guess
-
-local READ_ALL = defines.control_behavior.transport_belt.content_read_mode.entire_belt_hold
 
 -- When used as a builder interface, takes input from itself
 local ITSELF = "__ITSELF__"
@@ -40,7 +31,7 @@ local Builder = {}
 function Builder:constant_combi(signals,description)
     -- Create a constant combinator with the given signals
     local entity = self.surface.create_entity{
-        name="router-component-hidden-constant-combinator",
+        name="recipe-combinator-component-constant-combinator",
         position=self.position, force=self.force
     }
     local con = entity.get_or_create_control_behavior()
@@ -52,48 +43,25 @@ function Builder:constant_combi(signals,description)
     return entity
 end
 
-function Builder:make_blinken_combi(args)
+function Builder:make_combi(args)
     -----------------------------------------------------------------------
     -- Make a combinator entity.
     -----------------------------------------------------------------------
     -- If args.arithmetic then it will be an arithmetic combinator (otherwise decider)
     -- If args.combinator_name the you can set the entity name; otherwise it will be
     --   a regular combinator if args.visible, ando otherwise a hidden one
-    -- If it's hidden, and args.blinken is truthy, then it will still have visible
-    --   blinkenlights.  Blinkenlight combinators will be laid out in a grid with
-    --   pseudorandom colors according to the builder's blinken settings
     -- Set the combinator description according to args.description.
     -----------------------------------------------------------------------
-    local blinken = args.blinken
-    local blinken_suffix = blinken and "-blinken" or ""
-
     if args.arithmetic then
-        name = args.combinator_name or (args.visible and "arithmetic-combinator") or "router-component-arithmetic-combinator" .. blinken_suffix
+        name = args.combinator_name or (args.visible and "arithmetic-combinator") or "recipe-combinator-component-arithmetic-combinator"
+    elseif args.selector then
+        name = args.combinator_name or (args.visible and "selector-combinator") or "recipe-combinator-component-selector-combinator"
     else
-        name = args.combinator_name or (args.visible and "decider-combinator") or "router-component-decider-combinator" .. blinken_suffix
-    end
-    
-    -- Lay out blinkenlights on a grid
-    local x_offset, y_offset, orientation = 0
-    if args.blinken then
-        x_offset = self.blinken_base_x + self.blinken_offset_x*self.blinken_xi
-        y_offset = self.blinken_base_y + self.blinken_offset_y*self.blinken_yi
-        self.blinken_xi = self.blinken_xi + 1
-        if self.blinken_xi >= self.blinken_cols then
-            self.blinken_xi = 0
-            self.blinken_yi = self.blinken_yi + 1
-        end
-
-        -- arbitrary
-        orientation = (self.rngstate*4) % 16
-        self.rngstate = bit32.bxor(bit32.lrotate(self.rngstate,3),self.rngstate + 0xb96e43d2)
-    else
-        x_offset = 0
-        y_offset = 0
+        name = args.combinator_name or (args.visible and "decider-combinator") or "recipe-combinator-component-decider-combinator"
     end
 
     local ret = self.surface.create_entity{
-        name=name, position=myutil.vector_add(self.position,{x=x_offset,y=y_offset}), force=self.force,
+        name=name, position=self.position, force=self.force,
         direction = args.orientation or orientation,
         quality = args.quality
     }
@@ -139,7 +107,6 @@ function Builder:connect_inputs(args, combi)
         for i,conn in ipairs(args_color[1]) do
             if conn then
                 if conn == ITSELF then conn = combi end
-
                 if     conn.type == "arithmetic-combinator"
                     or conn.type == "decider-combinator"
                     or conn.type == "selector-combinator" then
@@ -156,7 +123,7 @@ end
 
 function Builder:decider(args)
     -- Create a decider combinator
-    local combi = self:make_blinken_combi(args)
+    local combi = self:make_combi(args)
 
     local behavior = combi.get_or_create_control_behavior()
     for i,clause in ipairs(args.decisions or {args}) do
@@ -182,406 +149,239 @@ function Builder:decider(args)
 end
 
 function Builder:arithmetic(args)
-    -- Create an arithmetic combinator
-    local combi = self:make_blinken_combi(util.merge{args,{arithmetic=true}})
-    local behavior = combi.get_or_create_control_behavior()
-    local params = self:expand_shorthand_conditions(args)
-    params.operation=args.op or "+"
-    params.output_signal=args.out or EACH
-    behavior.parameters = params
-    return self:connect_inputs(args, combi)
+  -- Create an arithmetic combinator
+  local combi = self:make_combi(util.merge{args,{arithmetic=true}})
+  local behavior = combi.get_or_create_control_behavior()
+  local params = self:expand_shorthand_conditions(args)
+  params.operation=args.op or "+"
+  params.output_signal=args.out or EACH
+  behavior.parameters = params
+  return self:connect_inputs(args, combi)
+end
+
+function Builder:selector(args)
+  -- Create an arithmetic combinator
+  local combi = self:make_combi(util.merge{args,{selector=true}})
+  combi.get_or_create_control_behavior().parameters = {
+    operation=args.op, select_max=args.select_max, index_signal=args.index
+  }
+  return self:connect_inputs(args, combi)
 end
 
 function Builder:new(surface,position,force)
-    local o = {surface=surface,position=position,force=force}
-    setmetatable(o, self)
-    self.__index = self
-    self.blinken_xi = 0
-    self.blinken_yi = 0
-    self.blinken_cols = 8
-    self.blinken_base_x = 0
-    self.blinken_base_y = 0
-    self.blinken_offset_x = 0
-    self.blinken_offset_y = 0
-    self.rngstate = 0x6ff4cd3d
-    return o
+  local o = {surface=surface,position=position,force=force}
+  setmetatable(o, self)
+  self.__index = self
+  return o
 end
 
-function Builder:create_or_find_entity(args)
-    -- TODO: do we have issues with direction or whatever here?
-    local position = args.position or self.position
-    
-    -- Is it already there?
-    local entity = self.surface.find_entity(args.name,position)
-    if entity then return entity end
+local band = bit32.band
 
-    -- Is it a ghost?
-    entity = self.surface.find_entities_filtered{
-        ghost_name=args.name,
-        position=position,
-        force=self.force,
-        limit=1
-    }
-    if entity and entity[1] then
-        -- un-ghost it
-        local a,e,c = entity[1].revive()
-        return e
+local function div_mod_2_32(x,y)
+  -- Returns z such that, as int32_t's, (z*y) % (1<<32) = x
+  local z = band(y,3) -- low 2 bits of x
+  z = band(z * band(2-y*z,-1), 0xFFFF)
+  z = band(z * band(2-y*z,-1), 0xFFFF)
+  z = band(z * band(2-y*z,-1), 0xFFFF)
+  z = band(z * band(2-y*z,-1), -1) -- fine because z < 2^16 going into this step
+  -- multiply z = x*z.  
+  z = band(
+    band(z*band(x,0xFFFF),-1) +
+    band(z*bit32.rshift(x,16),0xFFFF)*0x10000,
+  -1)
+  if z >= 0x80000000 then z = z - 0x100000000 end
+  return z
+end
+
+local function build_sparse_matrix(builder,input,rows,prefix,aliases)
+  local columns = {}
+  local rowsig,combo,entry,colsig
+  local idx_data = {}
+  local jdx_data = {}
+  local jdx_dict = {}
+  local jdx_count = {}
+  local jdx_value
+  local entry_data = {}
+  local entry_dict = {}
+  local idx_dict = {}
+  
+  prefix = prefix or "sparse_matrix."
+  aliases = aliases or {}
+
+  for _idx,row in ipairs(rows) do
+    rowsig,combo = row[1],row[2]
+    local rowsig_str = rowsig.type .. ":" .. rowsig.name
+    for layer,col in ipairs(combo) do
+      colsig,entry = col[1],col[2]
+      if not idx_data[layer] then
+        idx_data[layer] = {}
+        jdx_data[layer] = {}
+        jdx_dict[layer] = {}
+        idx_dict[layer] = {}
+        entry_dict[layer] = {}
+        entry_data[layer] = {}
+        jdx_count[layer] = 0
+      end
+      local colsig_str = colsig.type .. ":" .. colsig.name
+      if not jdx_dict[layer][colsig_str] then
+        jdx_value = 1+jdx_count[layer]
+        jdx_count[layer] = jdx_value
+        table.insert(jdx_data[layer], {colsig,1+2*jdx_value})
+        jdx_dict[layer][colsig_str] = jdx_value
+      end
+      jdx_value = jdx_dict[layer][colsig_str]
+      if jdx_value > 1 then
+        table.insert(idx_data[layer], {rowsig,jdx_value-1})
+        idx_dict[layer][rowsig_str] = jdx_value-1
+      end
+      local ent = div_mod_2_32(entry,1+2*jdx_value)
+      table.insert(entry_data[layer], {rowsig,ent})
+      -- put in the dict so we can get it in aliases
+      entry_dict[layer][rowsig_str] = ent
     end
+  end
 
-    -- Nope, create it
-    return self.surface.create_entity(
-        util.merge({{position=position,force=self.force}, args})
-    )
-end
+  -- apply aliases
+  for _,alias in ipairs(aliases) do
+    local from=alias[1]
+    local to=alias[2]
+    for layer = 1,#idx_data do
+      to_str = to.type .. ":" .. to.name
+      if idx_dict[layer][to_str] then
+        table.insert(idx_data[layer],{from,idx_dict[layer][to_str]})
+      end
+      if entry_dict[layer][to_str] then
+        table.insert(entry_data[layer],{from,entry_dict[layer][to_str]})
+      end
+    end
+  end
 
--- Make a circuit that draws power, and outputs on GREEN based on power.
--- The outputs are based on the offset arg
---   (offset ^ INT_MIN) if power; offset if no power
---   default offset = INT_MIN
-local function power_consumption_combi(builder,size, prefix, suffix, orientation, offset, quality)
-    local name = "router-component-"..size.."-"..prefix.."power-combinator-"..suffix
-    local c1 = builder:arithmetic{
-        combinator_name=name,op="+",L=-0x80000000,R=POWER,out=POWER,red={ITSELF},
-        orientation = orientation, description="Power consumer",
-        quality = quality
+  -- TODO: make sure it can't be in input
+  local idx_signal = {type="virtual", name="signal-info"}
+
+  -- Build the combinators
+  -- First, 1-cycle input buffer
+  local buf_input = builder:arithmetic{L=EACH,op="+",R=0,description=prefix.."buf",green={input}}
+  local first_output = nil
+  for layer = 1,#idx_data do
+    local idx_combi = builder:constant_combi(idx_data[layer],   prefix.."idx"..tostring(layer))
+    local jdx_combi = builder:constant_combi(jdx_data[layer],   prefix.."jdx"..tostring(layer))
+    local ent_combi = builder:constant_combi(entry_data[layer], prefix.."ent"..tostring(layer))
+
+    -- idx != 0 and input != 0 ==> idx_signal = idx value
+    local get_idx = builder:decider{
+      decisions = {
+        {L=EACH,NL=NGREEN,op="!=",R=0},
+        {and_=true,L=EACH,NL=NRED,op="!=",R=0}
+      },
+      output = {{out=idx_signal,WO=NRED}},
+      green = {input}, red = {idx_combi},
+      description=prefix.."get_idx"..tostring(layer)
     }
-    local c2 = builder:arithmetic{op="+",L=offset or -0x80000000,R=POWER,out=POWER,red={c1}, description="Power consumer checker"}
-    c1.get_wire_connector(OGREEN,true).connect_to(c2.get_wire_connector(OGREEN,true))
-    return c2
+    local apply_idx = builder:selector{
+      op="select", index=idx_signal, select_max=false,
+      green = {get_idx}, red = {jdx_combi},
+      description=prefix.."apply_jdx"..tostring(layer)
+    }
+    local dotp = builder:arithmetic{
+      L=EACH,NL=NGREEN,op="*",R=EACH,NR=NRED,
+      out=idx_signal,
+      green = {buf_input}, red = {ent_combi},
+      description=prefix.."dotp"..tostring(layer)
+    }
+    local multiply = builder:arithmetic{
+      L=EACH,NL=NGREEN,op="*",R=idx_signal,NR=NRED,out=EACH,
+      green = {apply_idx}, red = {dotp},
+      description=prefix.."output"..tostring(layer)
+    }
+    if first_output then
+      first_output.get_wire_connector(OGREEN,true).connect_to(multiply.get_wire_connector(OGREEN,true))
+      first_output.get_wire_connector(ORED,true).  connect_to(multiply.get_wire_connector(ORED,  true))
+    else first_output = multiply end
+  end
+
+  -- game.print("Built sparse matrix with " .. tostring(#idx_data) .. " layers!")
+  return first_output
 end
 
--- 
-local function fixup_power_consumption(builder, entity, name)
-    local c1o,c1,c2
-    for _,e in ipairs(entity.surface.find_entities_filtered{
-        type="arithmetic-combinator",
-        area=entity.bounding_box,
-        force=builder.force
-    }) do
-        if string.find(e.name,"power%-combinator") then
-            c1o = e
-        elseif e.combinator_description == "Power consumer checker" then
-            c2 = e
+
+local function build_recipe_info_combinator(entity)
+  local builder = Builder:new(entity.surface, entity.position, entity.force)
+  local aliases = {}
+  local aliases_dict = {}
+
+  -- Set the entity's control info
+  local behavior = entity.get_or_create_control_behavior()
+  behavior.parameters = {first_constant=0, operation="+", second_constant=0, output_signal=nil}
+
+  -- Stage 1: input buffer.  Connect to entity's buffer
+  local input_buffer = builder:arithmetic{L=EACH,op="+",R=0,description="ri.input_buffer"}
+  input_buffer.get_wire_connector(IGREEN,true).connect_to(entity.get_wire_connector(IGREEN,true))
+  input_buffer.get_wire_connector(IRED,  true).connect_to(entity.get_wire_connector(IRED,  true))
+
+  -- Latency 5...
+  local buffer2 = builder:arithmetic{L=EACH,op="+",R=0,description="ri.buffer2",green={input_buffer}}
+  local buffer3 = builder:arithmetic{L=EACH,op="+",R=0,description="ri.buffer3",green={buffer2}}
+  local buffer4 = builder:arithmetic{L=EACH,op="+",R=0,description="ri.buffer4",green={buffer3}}
+
+  local crafting_time_scale = { crafting=60 }
+  local crafting_times = {}
+
+  local matrix = {}
+
+  local crafting_time_output = {type="virtual", name="signal-T"} -- TODO: get from config
+
+  -- iterate through the recipes
+  for name,recipe in pairs(prototypes.recipe) do
+    if crafting_time_scale[recipe.category] and crafting_time_scale[recipe.category]>0 then
+      local sig = {type="recipe",name=recipe.name}
+      local scaled_time = math.ceil(recipe.energy * crafting_time_scale[recipe.category])
+      table.insert(crafting_times,{sig,scaled_time})
+      local linear_combo = {}
+      -- TODO: deal with probabilities?
+      
+      for idx,product in ipairs(recipe.products) do
+        -- Default recipes, for specifying as an item instead of as a recipe
+        -- TODO: is this the logic the game engine uses to assign them?
+        local product_str = product.type .. ":" .. product.name
+        if not aliases_dict[product_str] then
+          aliases_dict[product_str] = recipe
+          table.insert(aliases,{{type=product.type,name=product.name},sig})
         end
-    end
-    if c1o and c2 then
-        local c1 = builder:arithmetic{
-            combinator_name=name,op="+",L=-0x80000000,R=POWER,out=POWER,red={ITSELF},
-            orientation = orientation, description="Power consumer",
-            quality = entity.quality
-        }
-        c1.get_wire_connector(ORED,true).connect_to(c2.get_wire_connector(IRED,true))
-        c1.get_wire_connector(OGREEN,true).connect_to(c2.get_wire_connector(OGREEN,true))
-        c1o.destroy()
-        return true
-    end
-    return false
-end
-    
--- Smart router heat-equation leakage factor.
---
--- The greater this is, the greater the equilibrium value on the wires will be, and the further
--- signals will propagate throughout the network.
---
--- The smaller this is, the faster the network will equilibrate.
-local LEAK_FACTOR = 64
 
-local function set_jam_scale(builder,entity,new_jam_scale)
-    -- Update a router to set the scale for the number of items in its buffer at which it is
-    -- considered jammed.  Multiplied by a constant, currently 16 (or rather -16 because it's
-    -- added to the item count)
-    for _,e in ipairs(entity.surface.find_entities_filtered{
-        type="constant-combinator",
-        area=entity.bounding_box,
-        force=builder.force
-    }) do
-        if e.combinator_description == "jammed scale" then
-            e.get_or_create_control_behavior().get_section(1).set_slot(1,
-                {value=util.merge{SIGC,{comparator="=",quality="normal"}},
-                 min=-16*new_jam_scale}
-            )
-        end
+        local amt = product.amount or (product.amount_min + product.amount_max)/2
+        table.insert(linear_combo,{{type=product.type, name=product.name},-amt})
+      end
+      for idx,ingredient in ipairs(recipe.ingredients) do
+        table.insert(linear_combo,{{type=ingredient.type, name=ingredient.name},ingredient.amount})
+      end
+
+      table.insert(matrix,{sig,linear_combo})
     end
+  end
+
+  -- widget to connect combi's output to the main entity
+  local function connect_output(combi)
+    if not combi then return end
+    combi.get_wire_connector(OGREEN,true).connect_to(entity.get_wire_connector(OGREEN,true))
+    combi.get_wire_connector(ORED,true).  connect_to(entity.get_wire_connector(ORED,  true))
+  end
+
+  -- TODO: if ...
+  connect_output(build_sparse_matrix(builder,buffer2,matrix,"ri.matrix.",aliases))
+
+  if crafting_time_output then
+    local times_combinator = builder:constant_combi(crafting_times,"ri.crafting_times")
+    local output_time = builder:arithmetic{
+      L=EACH,NL=NRED,op="*",R=EACH,NR=NGREEN,
+      out=crafting_time_output,
+      red={times_combinator},green={buffer4},
+      description="ri.crafting_time_output"
+    }
+    connect_output(output_time)
+  end
 end
 
-local function create_smart_comms(builder,prefix,chest,input_belts,input_loaders,output_loaders,lamps,jam_scale,size,quality)
-    ------------------------------------------------------------------------------
-    -- Create communications system for a smart router.
-    ------------------------------------------------------------------------------
-
-    -- Set up the builder's blinkendata
-    builder.blinken_cols = 6
-    builder.blinken_base_x = 0.43
-    builder.blinken_base_y = 0.38
-    builder.blinken_offset_x = 0.08
-    builder.blinken_offset_y = 0.070
-
-    ------------------------------------------------------------------------------
-    -- Disable the input loaders if too much stuff is in the chest (it's jammed)
-    -- FUTURE: in v0.1, individual input belts could jam without jamming the whole router
-    --   Should we preserve this behavior in v2?  Probably not worth?
-    --   But the new behavior probably makes the whole network more vulnerable to jamming.
-    ------------------------------------------------------------------------------
-    for _,b in ipairs(input_belts) do
-        local control = b.get_or_create_control_behavior()
-        control.read_contents = true
-        control.read_contents_mode = READ_ALL
-        -- FUTURE: enable/disable the belt on low power for show, or maybe that's too expensive?
-    end
-    local jammed = builder:arithmetic{L=EACH,NL=NGREEN,R=0,out=SIGC,green={chest},description="jammed"}
-    local jam_scale = builder:constant_combi({{SIGC,-16*jam_scale}},"jammed scale")
-
-    local power = power_consumption_combi(builder,size,prefix,"smart",builder.orientation,offset,quality)
-    local power2 = builder:arithmetic{L=EACH,op="+",R=0,green={power},description="power buffer"} -- hopefully helps UPS?
-    power2.get_wire_connector(OGREEN,true).connect_to(jammed.get_wire_connector(OGREEN,true))
-
-    jam_scale.get_wire_connector(CGREEN,true).connect_to(jammed.get_wire_connector(OGREEN,true))
-    for _,l in ipairs(input_loaders) do
-        local control = l.get_or_create_control_behavior()
-        control.circuit_enable_disable = true
-        control.circuit_condition = {first_signal = SIGC, comparator="<", second_signal=POWER}
-        l.get_wire_connector(CGREEN,true).connect_to(jammed.get_wire_connector(OGREEN,true))
-    end
-
-    ------------------------------------------------------------------------------
-    -- Signal transmission
-    ------------------------------------------------------------------------------
-    local LARGE = 0x3fffffff
-
-    -- == BIGMASK if in chest inventory, 0 if not
-    local inventory_large = builder:arithmetic{blinken=true,NL=NGREEN,op="OR",R=LARGE,green={chest},description="inventory large mask"}
-
-     -- negative: current and incoming inventory.  Will get extra green connected to it from the ports
-    -- local demand_holdover_2 = builder:arithmetic{blinken=true,op="+",R=0,description="demand holdover 2"}
-    local INV_SCALE=-4 -- TODO: -2 results in slight overdelivery, -4 probably underdelivery
-    local scaled_inv = builder:arithmetic{blinken=true,op="*",R=INV_SCALE,red=input_belts,description="scaled inventory"}
-    chest.get_wire_connector(CRED,true).connect_to(scaled_inv.get_wire_connector(IRED,true))
-    local my_demand = builder:decider{
-        blinken=true,
-        decisions={{L=EACH, op=">", R=0}},
-        red={scaled_inv},
-        description="demand if positive"
-    }
-    local claimed = builder:decider{
-        blinken=true,
-        decisions={{L=EACH, op=">", R=0}},
-        description="claimed",
-        output={{set_one=true,signal=EACH}}
-    }
-    claimed.get_wire_connector(IGREEN,true).connect_to(my_demand.get_wire_connector(IGREEN,true))
-    local nega_average_demand = builder:arithmetic{
-        blinken=true,L=EACH,op="/",R=-4,
-        description="nega average demand"
-    }
-    nega_average_demand.get_wire_connector(IGREEN,true).connect_to(my_demand.get_wire_connector(IGREEN,true))
-
-    local nega_driver = nil
-    for i,loader in ipairs(output_loaders) do
-        local lamp = lamps[i]
-
-        -- Lightly-documented feature: also connect red to see/set inventory
-        lamp.get_wire_connector(CRED,true).connect_to(scaled_inv.get_wire_connector(IRED,true))
-        
-        -- Set the lamp to enable when link >= 2 (one from me, one from them))
-        local control = lamp.get_or_create_control_behavior()
-        control.use_colors = true
-        control.color_mode = defines.control_behavior.lamp.color_mode.color_mapping
-        control.circuit_enable_disable = true
-        control.circuit_condition = {first_signal=LINK, comparator=">", constant=64}
-
-        -- Drive my demand * 4 ==> lamp (connected via their_demand)
-        local port_driver = builder:arithmetic{blinken=true,op="*",R=LEAK_FACTOR/4,red={my_demand},description="port driver"}
-        if not nega_driver then
-            nega_driver = builder:arithmetic{blinken=true,op="/",L=EACH,R=-LEAK_FACTOR,red={port_driver},description="nega-driver"}
-            local nega_driver_2 = builder:arithmetic{blinken=true,op="/",L=EACH,R=-LEAK_FACTOR/4,red={port_driver},description="nega-driver-2"}
-            nega_driver_2.get_wire_connector(ORED,true).connect_to(nega_average_demand.get_wire_connector(IRED,true))
-        end
-        
-        -- Combinator to hold link = 1
-        local constant_link = builder:constant_combi({{LINK,1}},  "constant link")
-
-        -- each/link = each/(LEAK+1 if unconnected, 2*LEAK+1 if connected)
-        local input_link = builder:arithmetic{blinken=true,L=EACH,op="/",R=LINK,red={constant_link},green={lamp,port_driver},description="port input"}
-        input_link.get_wire_connector(OGREEN,true).connect_to(my_demand.get_wire_connector(IGREEN,true))
-        local buffer_link = builder:arithmetic{blinken=true,L=EACH,op="+",R=0,red={input_link},green={nega_driver},description="buffer input"}
-        
-        ------------------------------------------------------------------------------
-        -- Output belt control
-        ------------------------------------------------------------------------------
-        -- red: ~(me-them)/2
-        -- green = same/4
-        local output_controller = builder:decider{
-            blinken=true,
-            decisions = {
-                {NL=NGREEN, op=">", R=1},                     -- in supply
-                {and_=true,NL=NRED, op=">", R=0},             -- roughly their demand > 0
-                {and_=true,NL=NBOTH, op=">", R=LARGE+1},      -- roughly their demand > mine
-                -- OR --
-                {NL=NGREEN, op="=",  R=LARGE},                -- inventory > 0 and no demand
-                {and_=true,NL=NBOTH,L=DEFAULT,op=">",R=1}     -- roughly their default > mine (with +1 because of demand signal)
-            },
-            output = {{set_one=true,signal=EACH}},
-            green = {nega_average_demand,inventory_large,claimed},
-            red = {buffer_link},
-            description="output_controller"
-        }
-
-        -- Set output loader filter behavior
-        loader.loader_filter_mode = "whitelist"
-        local control = loader.get_or_create_control_behavior()
-        control.circuit_set_filters = true
-        -- control.circuit_read_transfers = true
-        loader.get_wire_connector(CGREEN,true).connect_to(output_controller.get_wire_connector(OGREEN,true))
-
-        -- local demand_holdover = builder:arithmetic{blinken=true,op="*",R=INV_SCALE,red={loader},description="demand holdover 1"}
-        -- demand_holdover.get_wire_connector(ORED,true).connect_to(scaled_inv.get_wire_connector(ORED,true))
-        -- demand_holdover.get_wire_connector(OGREEN,true).connect_to(demand_holdover_2.get_wire_connector(IGREEN,true))
-    end
-end
-
-
-local function create_smart_comms_io(
-    builder,size,prefix,entity,
-    input_belts,input_inserters,output_loaders,
-    port,indicator,threshold_trim
-)
-    ------------------------------------------------------------------------------
-    -- Create I/O system for a smart router.
-    ------------------------------------------------------------------------------
-    -- First, set links and leaf to 1, and set up the indicator lamp
-    indicator.get_wire_connector(CGREEN,true).connect_to(port.get_wire_connector(CGREEN,true))
-    local control = indicator.get_or_create_control_behavior()
-    local leafplus = builder:constant_combi({{LEAF,1},{LINK,1}},"io leaf")
-    local leafminus = builder:constant_combi({{LEAF,-1}},"io leaf negative")
-    indicator.get_wire_connector(CGREEN,true).connect_to(leafplus.get_wire_connector(CGREEN,true))
-    indicator.get_wire_connector(CRED,true).connect_to(leafminus.get_wire_connector(CRED,true))
-    control.use_colors = true
-    control.color_mode = defines.control_behavior.lamp.color_mode.color_mapping
-    control.circuit_enable_disable = true
-    control.circuit_condition = {first_signal=LINK, comparator=">", constant=1}
-
-    -- Create the power controller
-    local quality = entity.quality
-    local power = power_consumption_combi(builder,size,prefix,"io",builder.orientation,offset,quality)
-    local power2 = builder:arithmetic{L=EACH,op="+",R=0,green={power},description="power buffer"} -- hopefully helps UPS?
-    for _,ins in ipairs(input_inserters) do
-        control = ins.get_or_create_control_behavior()
-        control.circuit_enable_disable = true
-        control.circuit_condition = {first_signal = POWER, comparator=">", constant=0}
-    end
-
-    -- Set input belts to read contents
-    for _,belt in ipairs(input_belts) do
-        control = belt.get_or_create_control_behavior()
-        control.read_contents = true
-        control.read_contents_mode = READ_ALL
-    end
-
-    -- Send demand to the network
-    local my_nega_supply = builder:arithmetic{L=EACH,op="*",R=-(LEAK_FACTOR*3/2),red={port},green=input_belts,
-        description = "io negate supply"
-    }
-    local my_scaled_demand = builder:arithmetic{L=EACH,op="*",R=(LEAK_FACTOR*3/2),green={entity}, description = "io scaled demand"}
-
-    local my_demand = builder:decider{
-        decisions = {{L=EACH, NL=NBOTH, op=">", R=0}},
-        output = {{signal=EACH,WO=NBOTH,}},
-        green = {my_scaled_demand},
-        red = {my_nega_supply},
-        description="my demand if positive"
-    }
-    my_demand.get_wire_connector(OGREEN,true).connect_to(port.get_wire_connector(CGREEN,true))
-
-    -- Implement the threshold.
-    -- First pass on positive ones, and set negative ones with -1.
-    -- When my demand is >0, set threshold to -huge
-    local my_demand_very_negative = builder:decider{
-        decisions = {{L=EACH, NL=NRED, op=">", R=0}},
-        output = {{signal=EACH,WO=NBOTH,set_one=true,constant=-0x40000000}},
-        red = {my_demand},
-        description="my demand if positive"
-    }
-    local threshold_buffer_positive = builder:decider{
-        decisions = {{L=EACH, NL=NBOTH, op=">", R=0}},
-        output = {{signal=EACH,WO=NBOTH},{signal=EACH,WO=NBOTH}}, -- times two seems about right
-        green = {threshold_trim},
-        description="threshold if positive"
-    }
-    local threshold_buffer_negative = builder:decider{
-        decisions = {{L=EACH, NL=NBOTH, op="<", R=0}},
-        output = {{signal=EACH,WO=NBOTH,set_one=true,constant=-1}},
-        green = {threshold_trim},
-        description="threshold if negative"
-    }
-    local threshold_scaled = builder:arithmetic{L=EACH,op="*",R=LEAK_FACTOR/4,
-        green={threshold_buffer_negative,threshold_buffer_positive},
-        description="threshold multiplier"
-    }
-
-    -- Calculate net demand of the network
-    local net_network_demand = builder:arithmetic{
-        L=EACH,NL=NGREEN,op="-",R=EACH,NR=NRED,
-        green = {my_demand}, -- and the network, since it is tied to green
-        red = {my_demand},
-        description="net demand"
-    }
-
-    -- It's worth sending if it's above the threshold, and the threshold is positive.
-    local worth_sending = builder:decider{
-        decisions = {
-            {L=EACH, NL=NGREEN, op=">=", R=EACH, NR=NRED},
-            {and_=true, L=EACH, NL=NRED, op=">", R=0},
-            -- or no threshold is set
-            {L=EACH, NL=NGREEN, op=">=", R=THRESHOLD, NR=NRED},
-            {and_=true, L=THRESHOLD, NL=NRED, op=">", R=0},
-            {and_=true, L=EACH, NL=NRED, op="=", R=0},
-        },
-        output = {{signal=EACH,set_one=true}},
-        green = {net_network_demand},
-        red = {threshold_scaled,my_demand_very_negative},
-        description="worth sending"
-    }
-
-    -- For each good which is worth sending but not in stock, set output to -1
-    local block_not_in_stock = builder:decider{
-        decisions = {
-            {L=EACH, NL=NGREEN, op=">", R=0},
-            {and_=true, L=EACH, NL=NRED, op="=", R=0}
-        },
-        output = {{signal=EACH,set_one=true,constant=-1}},
-        green = {worth_sending},
-        red = {port},
-        description="block not in stock"
-    }
-    for _,ldr in ipairs(output_loaders) do
-        ldr.get_wire_connector(CGREEN,true).connect_to(worth_sending.get_wire_connector(OGREEN,true))
-        ldr.get_wire_connector(CRED,true).connect_to(block_not_in_stock.get_wire_connector(ORED,true))
-        ldr.loader_filter_mode = "whitelist"
-        control = ldr.get_or_create_control_behavior()
-        control.circuit_set_filters = true
-    end
-end
-
--- Construct module
-M.create_smart_comms = create_smart_comms
-M.set_jam_scale = set_jam_scale
-M.create_smart_comms_io = create_smart_comms_io
-M.power_consumption_combi = power_consumption_combi
-M.fixup_power_consumption = fixup_power_consumption
-M.RED = CRED
-M.GREEN = CGREEN
-M.DEFAULT = DEFAULT
-M.INPUT = INPUT
-M.OUTPUT = OUTPUT
-M.POWER = POWER
-M.EACH = EACH
-M.ANYTHING = ANYTHING
-M.EVERYTHING = EVERYTHING
 M.Builder = Builder
-M.LINK = LINK
-M.LEAF = LEAF
-M.ZERO = ZERO
-M.DEMAND_FACTOR = DEMAND_FACTOR
-M.THRESHOLD = THRESHOLD
-
+M.build_recipe_info_combinator = build_recipe_info_combinator
 return M

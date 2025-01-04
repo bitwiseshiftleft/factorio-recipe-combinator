@@ -1,0 +1,5 @@
+local items = require "prototypes.items"
+local entities = require "prototypes.entities"
+local recipes = require "prototypes.recipes"
+local technologies = require "prototypes.technologies"
+local styles = require "prototypes.styles"
