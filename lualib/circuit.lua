@@ -184,7 +184,7 @@ local function div_mod_2_32(x,y)
   z = band(z * band(2-y*z,-1), 0xFFFF)
   z = band(z * band(2-y*z,-1), 0xFFFF)
   z = band(z * band(2-y*z,-1), -1) -- fine because z < 2^16 going into this step
-  -- multiply z = x*z.  
+  -- multiply z = x*z.
   z = band(
     band(z*band(x,0xFFFF),-1) +
     band(z*bit32.rshift(x,16),0xFFFF)*0x10000,
@@ -204,7 +204,7 @@ local function build_sparse_matrix(builder,input,rows,prefix,aliases)
   local entry_data = {}
   local entry_dict = {}
   local idx_dict = {}
-  
+
   prefix = prefix or "sparse_matrix."
   aliases = aliases or {}
 
@@ -305,7 +305,7 @@ local function build_sparse_matrix(builder,input,rows,prefix,aliases)
 end
 
 
-local function build_recipe_info_combinator(entity)
+local function build_recipe_info_combinator(entity, machines)
   local builder = Builder:new(entity.surface, entity.position, entity.force)
   local aliases = {}
   local aliases_dict = {}
@@ -314,32 +314,36 @@ local function build_recipe_info_combinator(entity)
   local behavior = entity.get_or_create_control_behavior()
   behavior.parameters = {first_constant=0, operation="+", second_constant=0, output_signal=nil}
 
-  -- Stage 1: input buffer.  Connect to entity's buffer
-  local input_buffer = builder:arithmetic{L=EACH,op="+",R=0,description="ri.input_buffer"}
-  input_buffer.get_wire_connector(IGREEN,true).connect_to(entity.get_wire_connector(IGREEN,true))
-  input_buffer.get_wire_connector(IRED,  true).connect_to(entity.get_wire_connector(IRED,  true))
+  local crafting_time_scale = {}
+  local absolute_time_scale = 60 -- i.e. in ticks
 
-  -- Latency 5...
-  local buffer2 = builder:arithmetic{L=EACH,op="+",R=0,description="ri.buffer2",green={input_buffer}}
-  local buffer3 = builder:arithmetic{L=EACH,op="+",R=0,description="ri.buffer3",green={buffer2}}
-  local buffer4 = builder:arithmetic{L=EACH,op="+",R=0,description="ri.buffer4",green={buffer3}}
+  -- parse out the machines into speeds and categories
+  for _,machine in ipairs(machines) do
+    local quality = nil -- TODO
+    local machine_proto = prototypes.entity[machine]
+    for cat,_ in pairs(machine_proto.crafting_categories) do
+      if not crafting_time_scale[cat] then
+        crafting_time_scale[cat] = absolute_time_scale / machine_proto.get_crafting_speed(quality)
+      end
+    end
+  end
 
-  local crafting_time_scale = { crafting=60 }
   local crafting_times = {}
-
   local matrix = {}
-
   local crafting_time_output = {type="virtual", name="signal-T"} -- TODO: get from config
+  local valid = {}
 
-  -- iterate through the recipes
-  for name,recipe in pairs(prototypes.recipe) do
-    if crafting_time_scale[recipe.category] and crafting_time_scale[recipe.category]>0 then
+  -- iterate through the recipes in the given categories
+  for category,_ in pairs(crafting_time_scale) do
+    for name,recipe in pairs(prototypes.get_recipe_filtered{{filter="category",category=category}}) do
       local sig = {type="recipe",name=recipe.name}
+      table.insert(valid,{sig,1})
+
       local scaled_time = math.ceil(recipe.energy * crafting_time_scale[recipe.category])
       table.insert(crafting_times,{sig,scaled_time})
       local linear_combo = {}
       -- TODO: deal with probabilities?
-      
+
       for idx,product in ipairs(recipe.products) do
         -- Default recipes, for specifying as an item instead of as a recipe
         -- TODO: is this the logic the game engine uses to assign them?
@@ -347,6 +351,7 @@ local function build_recipe_info_combinator(entity)
         if not aliases_dict[product_str] then
           aliases_dict[product_str] = recipe
           table.insert(aliases,{{type=product.type,name=product.name},sig})
+          table.insert(valid,{{type=product.type,name=product.name},1})
         end
 
         local amt = product.amount or (product.amount_min + product.amount_max)/2
@@ -359,6 +364,27 @@ local function build_recipe_info_combinator(entity)
       table.insert(matrix,{sig,linear_combo})
     end
   end
+  
+  -- Extend out to latency 5.
+  -- Stage 1: input buffer.  Connect to entity's inputs
+  local input_buffer = builder:arithmetic{L=EACH,op="+",R=0,description="ri.input_buffer"}
+  input_buffer.get_wire_connector(IGREEN,true).connect_to(entity.get_wire_connector(IGREEN,true))
+  input_buffer.get_wire_connector(IRED,  true).connect_to(entity.get_wire_connector(IRED,  true))
+
+  -- Stage 2: selection of one valid input
+  local valid_combi = builder:constant_combi(valid, "ri.valid")
+  local buffer2 = builder:decider{
+    decisions={
+      {NL=NGREEN,L=EACH,op="!=",R=0},
+      {and_=true,NL=NRED,L=EACH,op="!=",R=0}
+    },
+    output={{out=ANYTHING,WO=NGREEN}},
+    description="ri.buffer2",green={input_buffer},red={valid_combi}
+  }
+
+  -- Stages 3,4: just buffer
+  local buffer3 = builder:arithmetic{L=EACH,op="+",R=0,description="ri.buffer3",green={buffer2}}
+  local buffer4 = builder:arithmetic{L=EACH,op="+",R=0,description="ri.buffer4",green={buffer3}}
 
   -- widget to connect combi's output to the main entity
   local function connect_output(combi)

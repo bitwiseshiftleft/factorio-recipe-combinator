@@ -47,7 +47,8 @@ local function on_built(ev)
     if entity == nil then entity = ev.entity end
     -- TODO
     if entity == nil or entity.name ~= "recipe-combinator-main" then return end
-    circuit.build_recipe_info_combinator(entity)
+    -- TODO select plants, other options ...
+    circuit.build_recipe_info_combinator(entity,{"assembling-machine-3", "chemical-plant", "oil-refinery"})
 end
 
 local function on_settings_pasted(ev)
