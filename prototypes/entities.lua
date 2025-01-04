@@ -76,7 +76,7 @@ data:extend{
         name = "recipe-combinator-main",
         icons = {{
             icon = "__base__/graphics/icons/arithmetic-combinator.png",
-            tint = {r=1,g=0.7,b=0.5,a=1}
+            tint = {r=1,g=0.4,b=0.3,a=1}
         }},
         sprites =  make_4way_animation_from_spritesheet{
             layers = {
@@ -85,7 +85,7 @@ data:extend{
                     filename = "__base__/graphics/entity/combinator/arithmetic-combinator.png",
                     width = 144,
                     height = 124,
-                    tint = {r=1,g=0.7,b=0.5,a=1},
+                    tint = {r=1,g=0.4,b=0.3,a=1},
                     shift = util.by_pixel(0.5, 7.5)
                 },
                 {

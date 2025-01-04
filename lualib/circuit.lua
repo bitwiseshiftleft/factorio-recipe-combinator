@@ -175,8 +175,98 @@ function Builder:new(surface,position,force)
   return o
 end
 
-local band = bit32.band
+local function build_flag_matrix(builder,input,rows,prefix,aliases)
+  -- TODO for UPS: deduplicate flags, so that only the meaning is duplicated
+  local flag_layers = {}
+  local flag_layers_as_dict = {}
+  local meaning_layers = {}
+  local nbits = 0
+  local bitno = {}
 
+  for _idx,row in ipairs(rows) do
+    rowsig,cols = row[1],row[2]
+    local rowsig_str = rowsig.type .. ":" .. rowsig.name
+    local bitses = {}
+    for _,colsig in ipairs(cols) do
+      local colsig_str = colsig.type .. ":" .. colsig.name
+
+      -- register the column if it doesn't exist
+      if not bitno[colsig_str] then
+        bitno[colsig_str] = nbits
+        if nbits % 32 == 0 then
+          -- new layer
+          flag_layers[nbits/32 + 1] = {}
+          flag_layers_as_dict[nbits/32 + 1] = {}
+          meaning_layers[nbits/32 + 1] = {}
+        end
+        table.insert(meaning_layers[math.floor(nbits/32)+1], {colsig, bit32.lshift(1,nbits%32)})
+        nbits = nbits+1
+      end
+
+      -- put it in the bitset
+      local bit = bitno[colsig_str]
+      local grp = 1+math.floor(bit/32)
+      if bitses[grp] then bitses[grp] = bitses[grp] + bit32.lshift(1,bit%32)
+      else bitses[grp] = bit32.lshift(1,bit%32)
+      end
+    end
+    for grp,mask in pairs(bitses) do
+      table.insert(flag_layers[grp],{rowsig,mask})
+      flag_layers_as_dict[grp][rowsig_str] = mask
+    end
+  end
+
+  -- Apply aliases
+  for _,alias in ipairs(aliases) do
+    local from = alias[1]
+    local to = alias[2]
+    local to_str = to.type .. ":" .. to.name
+    for layer = 1,math.ceil(nbits/32) do
+      if flag_layers_as_dict[layer][to_str] then
+        table.insert(flag_layers[layer],{from,flag_layers_as_dict[layer][to_str]})
+      end
+    end
+  end
+
+  -- Build combinators
+  local all_ands = {}
+  local idx_signal = {type="virtual", name="signal-info"}
+  for layer = 1,math.ceil(nbits/32) do
+    local flag_combi = builder:constant_combi(flag_layers[layer],      prefix.."flag"..tostring(layer))
+    local flag_meaning = builder:constant_combi(meaning_layers[layer], prefix.."flag_meaning"..tostring(layer))
+
+    -- flag != 0 and input != 0 ==> idx_signal = idx value
+    local get_flags = builder:decider{
+      decisions = {
+        {L=EACH,NL=NGREEN,op="!=",R=0},
+        {and_=true,L=EACH,NL=NRED,op="!=",R=0}
+      },
+      output = {{out=idx_signal,WO=NRED}},
+      green = {input}, red = {flag_combi},
+      description=prefix.."get_flags"..tostring(layer)
+    }
+
+    local and_flags = builder:arithmetic{
+      L=idx_signal,NL=NGREEN,op="AND",R=EACH,NR=NRED,out=EACH,
+      green = {get_flags}, red = {flag_meaning},
+      description=prefix.."and_flags"..tostring(layer)
+    }
+    
+    table.insert(all_ands, and_flags)
+  end
+
+  -- Last layer: all nonzero sigs
+  local nonzero = builder:decider{
+    decisions={{L=EACH,NL=NGREEN,op="!=",R=0}},
+    output={{out=EACH,set_one=true}},
+    green = all_ands,
+    description = prefix.."nonzero"
+  }
+  return nonzero
+end
+
+
+local band = bit32.band
 local function div_mod_2_32(x,y)
   -- Returns z such that, as int32_t's, (z*y) % (1<<32) = x
   local z = band(y,3) -- low 2 bits of x
@@ -194,6 +284,20 @@ local function div_mod_2_32(x,y)
 end
 
 local function build_sparse_matrix(builder,input,rows,prefix,aliases)
+  -- given an input of the form
+  -- {sig1, {{sig1a,4}, {sig1b,123}}} or similar
+  -- {sig2, ...}
+  -- ...
+  -- build a sparse matrix which takes a single signal as input (e.g. sig1, 10)
+  -- and outputs that multiple of that row of the matrix,
+  -- e.g. {sig1a,40},{sig1b,1230}
+  --
+  -- This has latency 3.
+  --
+  -- When multiple rows are the same (e.g. indexed by a recipe and also
+  -- by one of its products), this might be more efficient using aliases
+  -- In that case, pass the aliases as {sig1_alias, sig1}
+  -- to indicate that sig1_alias's row should be the same as sig1's row
   local columns = {}
   local rowsig,combo,entry,colsig
   local idx_data = {}
@@ -304,7 +408,6 @@ local function build_sparse_matrix(builder,input,rows,prefix,aliases)
   return first_output
 end
 
-
 local function build_recipe_info_combinator(entity, machines)
   local builder = Builder:new(entity.surface, entity.position, entity.force)
   local aliases = {}
@@ -316,6 +419,7 @@ local function build_recipe_info_combinator(entity, machines)
 
   local crafting_time_scale = {}
   local absolute_time_scale = 60 -- i.e. in ticks
+  local category_to_machine = {}
 
   -- parse out the machines into speeds and categories
   for _,machine in ipairs(machines) do
@@ -324,6 +428,7 @@ local function build_recipe_info_combinator(entity, machines)
     for cat,_ in pairs(machine_proto.crafting_categories) do
       if not crafting_time_scale[cat] then
         crafting_time_scale[cat] = absolute_time_scale / machine_proto.get_crafting_speed(quality)
+        category_to_machine[cat] = (machine_proto.items_to_place_this[1] or {}).name
       end
     end
   end
@@ -332,6 +437,17 @@ local function build_recipe_info_combinator(entity, machines)
   local matrix = {}
   local crafting_time_output = {type="virtual", name="signal-T"} -- TODO: get from config
   local valid = {}
+  local flags = {}
+  local module_category_to_module = {}
+  local module_tier = {}
+
+  -- TODO: cache these module categories
+  for name,module in pairs(prototypes.get_item_filtered{{filter="type",type="module"}}) do
+    if not module_tier[module.category] or module.tier < module_tier[module.category] then
+      module_tier[module.category] = module.tier
+      module_category_to_module[module.category] = module
+    end
+  end
 
   -- iterate through the recipes in the given categories
   for category,_ in pairs(crafting_time_scale) do
@@ -360,11 +476,35 @@ local function build_recipe_info_combinator(entity, machines)
       for idx,ingredient in ipairs(recipe.ingredients) do
         table.insert(linear_combo,{{type=ingredient.type, name=ingredient.name},ingredient.amount})
       end
-
       table.insert(matrix,{sig,linear_combo})
+
+      -- OK, what about module effects and other flags
+      local the_flags    = {}
+      if category_to_machine[category] then
+        table.insert(the_flags,{type="item",name=category_to_machine[category]})
+      end
+
+      -- what modules are allowed?
+      for module_cat,module in pairs(module_category_to_module) do
+        local ok = ((not recipe.allowed_module_categories)
+                      or recipe.allowed_module_categories[module_cat])
+        if ok and recipe.allowed_effects then
+          for eff,_value in pairs(module.module_effects) do
+            if not recipe.allowed_effects[eff] then
+              ok = false
+              break
+            end
+          end
+        end
+        if ok then
+          table.insert(the_flags,{type="item",name=module.name})
+        end
+      end
+
+      table.insert(flags,{sig,the_flags})
     end
   end
-  
+
   -- Extend out to latency 5.
   -- Stage 1: input buffer.  Connect to entity's inputs
   local input_buffer = builder:arithmetic{L=EACH,op="+",R=0,description="ri.input_buffer"}
@@ -393,8 +533,9 @@ local function build_recipe_info_combinator(entity, machines)
     combi.get_wire_connector(ORED,true).  connect_to(entity.get_wire_connector(ORED,  true))
   end
 
-  -- TODO: if ...
+  -- TODO: if these are even desired
   connect_output(build_sparse_matrix(builder,buffer2,matrix,"ri.matrix.",aliases))
+  connect_output(build_flag_matrix(builder,buffer2,flags,"ri.flag.",aliases))
 
   if crafting_time_output then
     local times_combinator = builder:constant_combi(crafting_times,"ri.crafting_times")
