@@ -1,0 +1,10 @@
+{
+  "name": "recipe_combinator",
+  "version": "0.1",
+  "title": "Recipe Combinator",
+  "author": "bitwiseshiftleft",
+  "factorio_version": "2.0",
+  "homepage": "https://github.com/bitwiseshiftleft/factorio-recipe-combinator/",
+  "description": "Special combinator to give information about items, fluids, receipes etc",
+  "dependencies": []
+}
