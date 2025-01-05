@@ -20,6 +20,10 @@ local function close(player_index, silent)
   end
 end
 
+handlers.close = function (ev)
+  if ev.player_index then close(ev.player_index) end
+end
+
 local function open(player_index, entity)
   if not player_index then return end
   local player = game.get_player(player_index)
@@ -60,7 +64,9 @@ local function open(player_index, entity)
         mouse_button_filter = { "left" },
         sprite = "utility/close",
         name = WINDOW_ID .. "_close",
-        handler = handlers.close
+        handler = {
+          [defines.events.on_gui_click] = handlers.close
+        }
       }
     }
   }
@@ -98,5 +104,8 @@ end
 M.open = open
 M.close = close
 M.WINDOW_ID = WINDOW_ID
+
+flib_gui.handle_events()
+flib_gui.add_handlers(handlers)
 
 return M

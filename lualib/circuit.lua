@@ -283,7 +283,33 @@ local function div_mod_2_32(x,y)
   return z
 end
 
-local function build_sparse_matrix(builder,input,rows,prefix,aliases)
+g_all_modules = nil -- names of all modules
+g_modules_per_category = nil -- names of only the lowest-tier module per category
+local function cache_modules()
+  -- Cache all modules, and also only the lowest-tier module per category
+  -- TODO: ... of all qualities???
+  g_all_modules = {}
+  g_modules_per_category = {}
+  local module_tier = {}
+  local module_category_to_module = {}
+  for _name,module in pairs(prototypes.get_item_filtered{{filter="type",type="module"}}) do
+    table.insert(g_all_modules,module.name)
+    if not module_category_to_module[module.category]
+      or module.tier < module_category_to_module[module.category].tier
+    then
+      module_category_to_module[module.category] = module
+    end
+  end
+  for _,module in pairs(module_category_to_module) do
+    table.insert(g_modules_per_category,module.name)
+  end
+end
+
+local function init()
+  cache_modules()
+end
+
+local function build_sparse_matrix(builder,input,rows,prefix,aliases,flags_only,multiply_by_input)
   -- given an input of the form
   -- {sig1, {{sig1a,4}, {sig1b,123}}} or similar
   -- {sig2, ...}
@@ -339,9 +365,11 @@ local function build_sparse_matrix(builder,input,rows,prefix,aliases)
         idx_dict[layer][rowsig_str] = jdx_value-1
       end
       local ent = div_mod_2_32(entry,1+2*jdx_value)
-      table.insert(entry_data[layer], {rowsig,ent})
-      -- put in the dict so we can get it in aliases
-      entry_dict[layer][rowsig_str] = ent
+      if not flags_only then
+        table.insert(entry_data[layer], {rowsig,ent})
+        -- put in the dict too so we can get it in aliases
+        entry_dict[layer][rowsig_str] = ent
+      end
     end
   end
 
@@ -354,7 +382,7 @@ local function build_sparse_matrix(builder,input,rows,prefix,aliases)
       if idx_dict[layer][to_str] then
         table.insert(idx_data[layer],{from,idx_dict[layer][to_str]})
       end
-      if entry_dict[layer][to_str] then
+      if (not flags_only) and entry_dict[layer][to_str] then
         table.insert(entry_data[layer],{from,entry_dict[layer][to_str]})
       end
     end
@@ -365,12 +393,14 @@ local function build_sparse_matrix(builder,input,rows,prefix,aliases)
 
   -- Build the combinators
   -- First, 1-cycle input buffer
-  local buf_input = builder:arithmetic{L=EACH,op="+",R=0,description=prefix.."buf",green={input}}
+  local buf_input
+  if not flags_only then
+    buf_input = builder:arithmetic{L=EACH,op="+",R=0,description=prefix.."buf",green={input}}
+  end
   local first_output = nil
   for layer = 1,#idx_data do
     local idx_combi = builder:constant_combi(idx_data[layer],   prefix.."idx"..tostring(layer))
     local jdx_combi = builder:constant_combi(jdx_data[layer],   prefix.."jdx"..tostring(layer))
-    local ent_combi = builder:constant_combi(entry_data[layer], prefix.."ent"..tostring(layer))
 
     -- idx != 0 and input != 0 ==> idx_signal = idx value
     local get_idx = builder:decider{
@@ -387,25 +417,60 @@ local function build_sparse_matrix(builder,input,rows,prefix,aliases)
       green = {get_idx}, red = {jdx_combi},
       description=prefix.."apply_jdx"..tostring(layer)
     }
-    local dotp = builder:arithmetic{
-      L=EACH,NL=NGREEN,op="*",R=EACH,NR=NRED,
-      out=idx_signal,
-      green = {buf_input}, red = {ent_combi},
-      description=prefix.."dotp"..tostring(layer)
-    }
-    local multiply = builder:arithmetic{
-      L=EACH,NL=NGREEN,op="*",R=idx_signal,NR=NRED,out=EACH,
-      green = {apply_idx}, red = {dotp},
-      description=prefix.."output"..tostring(layer)
-    }
+
+    local this_output
+    if flags_only then
+      -- accumulate
+      this_output = apply_idx
+    else
+      local ent_combi = builder:constant_combi(entry_data[layer], prefix.."ent"..tostring(layer))
+      local dotp
+      if multiply_by_input then
+        dotp = builder:arithmetic{
+          L=EACH,NL=NGREEN,op="*",R=EACH,NR=NRED,
+          out=idx_signal,
+          green = {buf_input}, red = {ent_combi},
+          description=prefix.."dotp"..tostring(layer)
+        }
+      else
+        dotp = builder:decider{
+          decisions = {
+            {L=EACH,NL=NGREEN,op="!=",R=0},
+            {and_=true,L=EACH,NL=NRED,op="!=",R=0}
+          },
+          output = {{out=idx_signal,WO=NRED}},
+          green = {buf_input}, red = {ent_combi},
+          description=prefix.."dotp"..tostring(layer)
+        }
+      end
+      this_output = builder:arithmetic{
+        L=EACH,NL=NGREEN,op="*",R=idx_signal,NR=NRED,out=EACH,
+        green = {apply_idx}, red = {dotp},
+        description=prefix.."output"..tostring(layer)
+      }
+    end
+    
+    -- Connect together all the outputs
     if first_output then
-      first_output.get_wire_connector(OGREEN,true).connect_to(multiply.get_wire_connector(OGREEN,true))
-      first_output.get_wire_connector(ORED,true).  connect_to(multiply.get_wire_connector(ORED,  true))
-    else first_output = multiply end
+      first_output.get_wire_connector(OGREEN,true).connect_to(this_output.get_wire_connector(OGREEN,true))
+      first_output.get_wire_connector(ORED,true).  connect_to(this_output.get_wire_connector(ORED,  true))
+    else
+      first_output = this_output
+    end
   end
 
   -- game.print("Built sparse matrix with " .. tostring(#idx_data) .. " layers!")
-  return first_output
+  if flags_only then
+    -- Have several flags but with arbitrary values
+    return builder:decider{
+      decisions={{L=EACH,NL=NGREEN,op="!=",R=0}},
+      output={{out=EACH,set_one=true}},
+      green={first_output},
+      description=prefix.."nonzero"
+    }
+  else
+    return first_output
+  end
 end
 
 local function build_recipe_info_combinator(entity, machines)
@@ -439,15 +504,9 @@ local function build_recipe_info_combinator(entity, machines)
   local valid = {}
   local flags = {}
   local module_category_to_module = {}
-  local module_tier = {}
 
-  -- TODO: cache these module categories
-  for name,module in pairs(prototypes.get_item_filtered{{filter="type",type="module"}}) do
-    if not module_tier[module.category] or module.tier < module_tier[module.category] then
-      module_tier[module.category] = module.tier
-      module_category_to_module[module.category] = module
-    end
-  end
+  local one_module_per_category = true
+  local modules_to_check = (one_module_per_category and g_modules_per_category) or g_all_modules
 
   -- iterate through the recipes in the given categories
   for category,_ in pairs(crafting_time_scale) do
@@ -485,9 +544,10 @@ local function build_recipe_info_combinator(entity, machines)
       end
 
       -- what modules are allowed?
-      for module_cat,module in pairs(module_category_to_module) do
+      for _,module_name in ipairs(modules_to_check) do
+        local module = prototypes.item[module_name]
         local ok = ((not recipe.allowed_module_categories)
-                      or recipe.allowed_module_categories[module_cat])
+                      or recipe.allowed_module_categories[module.category])
         if ok and recipe.allowed_effects then
           for eff,_value in pairs(module.module_effects) do
             if not recipe.allowed_effects[eff] then
@@ -534,7 +594,7 @@ local function build_recipe_info_combinator(entity, machines)
   end
 
   -- TODO: if these are even desired
-  connect_output(build_sparse_matrix(builder,buffer2,matrix,"ri.matrix.",aliases))
+  connect_output(build_sparse_matrix(builder,buffer2,matrix,"ri.matrix.",aliases,false,false))
   connect_output(build_flag_matrix(builder,buffer2,flags,"ri.flag.",aliases))
 
   if crafting_time_output then
@@ -551,4 +611,5 @@ end
 
 M.Builder = Builder
 M.build_recipe_info_combinator = build_recipe_info_combinator
+M.init = init
 return M

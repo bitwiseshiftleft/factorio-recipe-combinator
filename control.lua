@@ -6,6 +6,8 @@ local circuit = require "lualib.circuit"
 local disable_picker_dollies = require "lualib.disable_picker_dollies"
 disable_picker_dollies.disable_picker_dollies()
 
+circuit.init()
+
 local function name_or_ghost_name(entity)
     return ((entity.name == "entity-ghost") and entity.ghost_name) or entity.name
 end
@@ -38,14 +40,19 @@ local function on_died(ev, mined_by_robot)
         and entity.name == "recipe-combinator-main"
     then
         destroy_components(entity)
+
+        -- Close players' windows
+        for _,player in pairs(game.players) do
+            if player.gui.screen[gui.WINDOW_ID] then
+                gui.close(ev.player_index, true)
+            end
+        end
     end
-    game.print("Event TODO: Entity died")
 end
 
 local function on_built(ev)
     local entity = ev.created_entity
     if entity == nil then entity = ev.entity end
-    -- TODO
     if entity == nil or entity.name ~= "recipe-combinator-main" then return end
     -- TODO select plants, other options ...
     circuit.build_recipe_info_combinator(entity,{"assembling-machine-3", "chemical-plant", "oil-refinery"})
@@ -69,7 +76,17 @@ local function on_gui_opened(ev)
         gui.close(ev.player_index)
         return
     end
-    game.print("Event TODO: GUI opened")
+end
+
+local function on_gui_closed(ev)
+    -- TODO: this only supports closing of one window; need to support sub-windows for pickers etc.
+    if not ev.element then return end
+    if ev.element.name ~= gui.WINDOW_ID then return end
+    local player = game.get_player(ev.player_index)
+    if not player then return end
+    if player.gui.screen[gui.WINDOW_ID] then
+        gui.close(ev.player_index)
+    end
 end
 
 local filters = {{filter="name", name="recipe-combinator-main"}}
@@ -91,4 +108,5 @@ register_event(defines.events.on_undo_applied, on_undo_applied) -- no filter for
 
 register_event(defines.events.on_entity_settings_pasted, on_settings_pasted)
 register_event(defines.events.on_gui_opened, on_gui_opened)
+register_event(defines.events.on_gui_closed, on_gui_closed)
 -- register_event(defines.events.on_player_rotated_entity, on_rotated)
