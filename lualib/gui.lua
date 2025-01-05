@@ -1,4 +1,5 @@
 local flib_gui = require "__flib__.gui"
+local util = require "__core__.lualib.util"
 
 local M = {}
 local WINDOW_ID = "recipe-combinator-window"
@@ -24,6 +25,28 @@ handlers.close = function (ev)
   if ev.player_index then close(ev.player_index) end
 end
 
+local function checkbox_row(args)
+  local boxes = {}
+  local enabled = nil
+  for _,box in ipairs(args) do
+    if type(box) == string then
+      table.insert(boxes,{type="label", caption=box,enabled=enabled})
+    else
+      box = util.merge{{
+        type = "checkbox",
+        style = "checkbox",
+        state = false,
+        enabled = enabled
+      },box}
+      table.insert(boxes,box)
+      if enabled == nil then
+        enabled = (box.enabled == nil or box.enabled) and box.state
+      end
+    end
+  end
+  return { type="flow", style="recipe-combinator_indented_checkbox_row", children=boxes }
+end
+
 local function open(player_index, entity)
   if not player_index then return end
   local player = game.get_player(player_index)
@@ -42,6 +65,7 @@ local function open(player_index, entity)
     end
   end
 
+  local stretch = {type="empty-widget",style="recipe-combinator_stretch"}
   local named, main_window
   local titlebar = {
     type = "flow",
@@ -75,17 +99,89 @@ local function open(player_index, entity)
     type="frame", style="inside_shallow_frame_with_padding", direction="vertical",
     children = {
       {
-        type = "checkbox",
-        style = "subheader_caption_checkbox",
+        type = "radiobutton",
+        style = "recipe-combinator_subheader_caption_radio",
         state = true,
-        caption = { "recipe-combinator-gui.recipe-info-checkbox" }
+        caption = { "recipe-combinator-gui.recipe-info-mode" }
       },
-      { type = "line", style="inside_shallow_frame_with_padding_line" }, -- TODO: outset
+      checkbox_row{
+        { caption = { "recipe-combinator-gui.show-recipe-ingredients-checkbox" }, state = true },
+        stretch,
+        { caption = { "recipe-combinator-gui.negate-checkbox" }, state = true },
+        { caption = { "recipe-combinator-gui.times-input-checkbox" }, state = true }
+      },
+      checkbox_row{
+        { caption = { "recipe-combinator-gui.show-recipe-products-checkbox" }, state = true },
+        stretch,
+        { caption = { "recipe-combinator-gui.negate-checkbox" }, state = false },
+        { caption = { "recipe-combinator-gui.times-input-checkbox" }, state = true }
+      },
+      checkbox_row{
+        { caption = { "recipe-combinator-gui.show-crafting-time-checkbox" }, state = false },
+        { type = "choose-elem-button", style="recipe-combinator_signal_button", elem_type="signal" },
+        stretch,
+        { caption = { "recipe-combinator-gui.negate-checkbox" }, state = false },
+        { caption = { "recipe-combinator-gui.times-input-checkbox" }, state = false }
+      },
+      checkbox_row{
+        { caption = { "recipe-combinator-gui.show-allowed-modules-checkbox" }, state = true },
+        { type="radiobutton", style="radiobutton", caption = { "recipe-combinator-gui.one-module-per-category-radio" }, state = true },
+        { type="radiobutton", style="radiobutton", caption = { "recipe-combinator-gui.all-modules-radio" }, state = false }
+      },
+      checkbox_row{
+        -- TODO: options for only the first, etc?
+        { caption = { "recipe-combinator-gui.show-machines" }, state = false }
+      },
+
+
+      { type = "line", style="recipe-combinator_section_divider_line" },
       {
-        type = "checkbox",
-        style = "subheader_caption_checkbox",
+        type = "radiobutton",
+        style = "recipe-combinator_subheader_caption_radio",
         state = false,
-        caption = { "recipe-combinator-gui.item-info-checkbox" }
+        caption = { "recipe-combinator-gui.item-info-mode" }
+      },
+      checkbox_row{
+        { caption = { "recipe-combinator-gui.show-recipes-for-this-checkbox" }, state=true, enabled=false }
+      },
+
+      { type = "line", style="recipe-combinator_section_divider_line" },
+      {
+        type = "radiobutton",
+        style = "recipe-combinator_subheader_caption_radio",
+        state = false,
+        caption = { "recipe-combinator-gui.spoilage-info-mode" }
+      },
+      checkbox_row{
+        { caption = { "recipe-combinator-gui.show-spoilage-time-checkbox" }, state=false, enabled=false },
+        { type = "choose-elem-button", style="recipe-combinator_signal_button", elem_type="signal" },
+        { type="radiobutton", style="radiobutton", caption = { "recipe-combinator-gui.show-spoilage-seconds-radio" }, state = true },
+        { type="radiobutton", style="radiobutton", caption = { "recipe-combinator-gui.show-spoilage-ticks-radio" }, state = false }
+      },
+      checkbox_row{
+        { caption = { "recipe-combinator-gui.show-spoilage-products-checkbox" }, state=false, enabled=false },
+        { caption = { "recipe-combinator-gui.times-input-checkbox" }, state = false }
+      },
+
+      { type = "line", style="recipe-combinator_section_divider_line" },
+      {
+        type = "radiobutton",
+        style = "recipe-combinator_subheader_caption_radio",
+        state = false,
+        caption = { "recipe-combinator-gui.recycling-info-mode" }
+      },
+      checkbox_row{
+        { caption = { "recipe-combinator-gui.show-recycling-time-checkbox" }, state = false, enabled=false },
+        { type = "choose-elem-button", style="recipe-combinator_signal_button", elem_type="signal" },
+        stretch,
+        { caption = { "recipe-combinator-gui.negate-checkbox" }, state = false },
+        { caption = { "recipe-combinator-gui.times-input-checkbox" }, state = false }
+      },
+      checkbox_row{
+        { caption = { "recipe-combinator-gui.show-recycling-products-checkbox" }, state = false, enabled=false },
+        stretch,
+        { caption = { "recipe-combinator-gui.negate-checkbox" }, state = false },
+        { caption = { "recipe-combinator-gui.times-input-checkbox" }, state = false }
       }
     }
   }
