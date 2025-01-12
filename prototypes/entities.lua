@@ -78,6 +78,8 @@ data:extend{
             icon = "__base__/graphics/icons/arithmetic-combinator.png",
             tint = {r=1,g=0.4,b=0.3,a=1}
         }},
+        minable = {mining_time = 0.5, result = "recipe-combinator-main"},
+        placeable_by = {item="recipe-combinator-main",count=1},
         sprites =  make_4way_animation_from_spritesheet{
             layers = {
                 {

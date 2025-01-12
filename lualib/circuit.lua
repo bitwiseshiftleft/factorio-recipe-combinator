@@ -1,6 +1,10 @@
 local util = require "__core__.lualib.util"
 local M = {}
 
+local band = bit32.band
+local ceil=math.ceil
+local floor=math.floor
+
 -- Cribbed from Circuit-Controlled Router
 local HAVE_QUALITY = script.feature_flags.quality and script.feature_flags.space_travel
 
@@ -35,10 +39,22 @@ function Builder:constant_combi(signals,description)
         position=self.position, force=self.force
     }
     local con = entity.get_or_create_control_behavior()
+    local most_at_once = 1000
     local section = con.get_section(1)
-    for i,sig in ipairs(signals) do
-        section.set_slot(i,{value=util.merge{sig[1],{comparator="=",quality="normal"}},min=sig[2]})
+    local filters = {}
+    local j=0
+    for i=1,#signals do
+        local sig=signals[i]
+        j=j+1
+        if j>most_at_once then
+            j=j-most_at_once
+            section.filters = filters
+            section=con.add_section()
+        end
+        filters[j] = {value={type=sig[1].type,name=sig[1].name,comparator="=",quality="normal"},
+           min=sig[2]}
     end
+    section.filters = filters
     entity.combinator_description = description or ""
     return entity
 end
@@ -175,6 +191,12 @@ function Builder:new(surface,position,force)
   return o
 end
 
+local function signed_lshift(x,n)
+  x = bit32.lshift(x,n)
+  if x >= 0x80000000 then x = x - 0x100000000 end
+  return x
+end
+
 local function build_flag_matrix(builder,input,rows,prefix,aliases)
   -- TODO for UPS: deduplicate flags, so that only the meaning is duplicated
   local flag_layers = {}
@@ -199,15 +221,15 @@ local function build_flag_matrix(builder,input,rows,prefix,aliases)
           flag_layers_as_dict[nbits/32 + 1] = {}
           meaning_layers[nbits/32 + 1] = {}
         end
-        table.insert(meaning_layers[math.floor(nbits/32)+1], {colsig, bit32.lshift(1,nbits%32)})
+        table.insert(meaning_layers[floor(nbits/32)+1], {colsig, signed_lshift(1,nbits%32)})
         nbits = nbits+1
       end
 
       -- put it in the bitset
       local bit = bitno[colsig_str]
-      local grp = 1+math.floor(bit/32)
-      if bitses[grp] then bitses[grp] = bitses[grp] + bit32.lshift(1,bit%32)
-      else bitses[grp] = bit32.lshift(1,bit%32)
+      local grp = 1+floor(bit/32)
+      if bitses[grp] then bitses[grp] = bitses[grp] + signed_lshift(1,bit%32)
+      else bitses[grp] = signed_lshift(1,bit%32)
       end
     end
     for grp,mask in pairs(bitses) do
@@ -221,7 +243,7 @@ local function build_flag_matrix(builder,input,rows,prefix,aliases)
     local from = alias[1]
     local to = alias[2]
     local to_str = to.type .. ":" .. to.name
-    for layer = 1,math.ceil(nbits/32) do
+    for layer = 1,ceil(nbits/32) do
       if flag_layers_as_dict[layer][to_str] then
         table.insert(flag_layers[layer],{from,flag_layers_as_dict[layer][to_str]})
       end
@@ -231,7 +253,7 @@ local function build_flag_matrix(builder,input,rows,prefix,aliases)
   -- Build combinators
   local all_ands = {}
   local idx_signal = {type="virtual", name="signal-info"}
-  for layer = 1,math.ceil(nbits/32) do
+  for layer = 1,ceil(nbits/32) do
     local flag_combi = builder:constant_combi(flag_layers[layer],      prefix.."flag"..tostring(layer))
     local flag_meaning = builder:constant_combi(meaning_layers[layer], prefix.."flag_meaning"..tostring(layer))
 
@@ -266,14 +288,20 @@ local function build_flag_matrix(builder,input,rows,prefix,aliases)
 end
 
 
-local band = bit32.band
+local inverses_cache = {}
 local function div_mod_2_32(x,y)
   -- Returns z such that, as int32_t's, (z*y) % (1<<32) = x
-  local z = band(y,3) -- low 2 bits of x
-  z = band(z * band(2-y*z,-1), 0xFFFF)
-  z = band(z * band(2-y*z,-1), 0xFFFF)
-  z = band(z * band(2-y*z,-1), 0xFFFF)
-  z = band(z * band(2-y*z,-1), -1) -- fine because z < 2^16 going into this step
+  -- y must be odd
+  local z
+  if inverses_cache[y] then z = inverses_cache[y]
+  else
+    z = band(y,3) -- low 2 bits of x
+    z = band(z * band(2-y*z,-1), 0xFFFF)
+    z = band(z * band(2-y*z,-1), 0xFFFF)
+    z = band(z * band(2-y*z,-1), 0xFFFF)
+    z = band(z * band(2-y*z,-1), -1) -- fine because z < 2^16 going into this step
+    inverses_cache[y] = z
+  end
   -- multiply z = x*z.
   z = band(
     band(z*band(x,0xFFFF),-1) +
@@ -356,7 +384,7 @@ local function build_sparse_matrix(builder,input,rows,prefix,aliases,flags_only,
       if not jdx_dict[layer][colsig_str] then
         jdx_value = 1+jdx_count[layer]
         jdx_count[layer] = jdx_value
-        table.insert(jdx_data[layer], {colsig,1+2*jdx_value})
+        jdx_data[layer][jdx_value] = {colsig,1+2*jdx_value}
         jdx_dict[layer][colsig_str] = jdx_value
       end
       jdx_value = jdx_dict[layer][colsig_str]
@@ -459,7 +487,7 @@ local function build_sparse_matrix(builder,input,rows,prefix,aliases,flags_only,
     end
   end
 
-  -- game.print("Built sparse matrix with " .. tostring(#idx_data) .. " layers!")
+  -- game.print("Built sparse matrix with " .. tostring(#rows) .. " rows and ".. tostring(#idx_data) .. " layers!")
   if flags_only then
     -- Have several flags but with arbitrary values
     return builder:decider{
@@ -476,6 +504,7 @@ end
 local function build_recipe_info_combinator(entity, machines)
   local builder = Builder:new(entity.surface, entity.position, entity.force)
   local aliases = {}
+  local naliases = 0
   local aliases_dict = {}
 
   -- Set the entity's control info
@@ -485,6 +514,7 @@ local function build_recipe_info_combinator(entity, machines)
   local crafting_time_scale = {}
   local absolute_time_scale = 60 -- i.e. in ticks
   local category_to_machine = {}
+  local category_to_machine_proto = {}
 
   -- parse out the machines into speeds and categories
   for _,machine in ipairs(machines) do
@@ -494,74 +524,102 @@ local function build_recipe_info_combinator(entity, machines)
       if not crafting_time_scale[cat] then
         crafting_time_scale[cat] = absolute_time_scale / machine_proto.get_crafting_speed(quality)
         category_to_machine[cat] = (machine_proto.items_to_place_this[1] or {}).name
+        category_to_machine_proto[cat] = machine
       end
     end
   end
 
   local crafting_times = {}
+  local ncrafting_times = 0
   local matrix = {}
   local crafting_time_output = {type="virtual", name="signal-T"} -- TODO: get from config
   local valid = {}
+  local nvalid = 0
   local flags = {}
+  local nflags = 0
   local module_category_to_module = {}
 
   local one_module_per_category = true
-  local modules_to_check = (one_module_per_category and g_modules_per_category) or g_all_modules
-
+  
   -- iterate through the recipes in the given categories
   for category,_ in pairs(crafting_time_scale) do
+    local matrix_count=0
+    local machine_proto=category_to_machine_proto[category]
+    local machine_has_modules = machine_proto.module_inventory_size and (machine_proto.module_inventory_size>0)
     for name,recipe in pairs(prototypes.get_recipe_filtered{{filter="category",category=category}}) do
       local sig = {type="recipe",name=recipe.name}
-      table.insert(valid,{sig,1})
+      local products = recipe.products
+      nvalid=nvalid+1
+      valid[nvalid] = {sig,1}
 
-      local scaled_time = math.ceil(recipe.energy * crafting_time_scale[recipe.category])
-      table.insert(crafting_times,{sig,scaled_time})
+      local scaled_time = ceil(recipe.energy * crafting_time_scale[recipe.category])
+      ncrafting_times = ncrafting_times+1
+      crafting_times[ncrafting_times] = {sig,scaled_time}
       local linear_combo = {}
+      local ncombo=0
       -- TODO: deal with probabilities?
 
-      for idx,product in ipairs(recipe.products) do
+      for idx=1,#products do
+        local product=products[idx]
         -- Default recipes, for specifying as an item instead of as a recipe
         -- TODO: is this the logic the game engine uses to assign them?
         local product_str = product.type .. ":" .. product.name
         if not aliases_dict[product_str] then
           aliases_dict[product_str] = recipe
-          table.insert(aliases,{{type=product.type,name=product.name},sig})
-          table.insert(valid,{{type=product.type,name=product.name},1})
+          naliases=naliases+1
+          aliases[naliases] = {{type=product.type,name=product.name},sig}
+          nvalid=nvalid+1
+          valid[nvalid] = {{type=product.type,name=product.name},1}
         end
-
+        
         local amt = product.amount or (product.amount_min + product.amount_max)/2
-        table.insert(linear_combo,{{type=product.type, name=product.name},-amt})
+        ncombo=ncombo+1
+        linear_combo[ncombo]={{type=product.type, name=product.name},-amt}
       end
-      for idx,ingredient in ipairs(recipe.ingredients) do
-        table.insert(linear_combo,{{type=ingredient.type, name=ingredient.name},ingredient.amount})
+      local ingredients=recipe.ingredients
+      for idx=1,#ingredients do
+        local ingredient=ingredients[idx]
+        ncombo=ncombo+1
+        linear_combo[ncombo]={{type=ingredient.type, name=ingredient.name},ingredient.amount}
       end
-      table.insert(matrix,{sig,linear_combo})
+      matrix_count=matrix_count+1
+      matrix[matrix_count]={sig,linear_combo}
 
       -- OK, what about module effects and other flags
       local the_flags    = {}
+      local mflags = 0
       if category_to_machine[category] then
-        table.insert(the_flags,{type="item",name=category_to_machine[category]})
+        mflags=mflags+1
+        the_flags[mflags] = {type="item",name=category_to_machine[category]}
       end
 
       -- what modules are allowed?
-      for _,module_name in ipairs(modules_to_check) do
-        local module = prototypes.item[module_name]
-        local ok = ((not recipe.allowed_module_categories)
-                      or recipe.allowed_module_categories[module.category])
-        if ok and recipe.allowed_effects then
-          for eff,_value in pairs(module.module_effects) do
-            if not recipe.allowed_effects[eff] then
-              ok = false
-              break
+      if machine_has_modules then
+        for idx=1,#g_modules_per_category do
+          local module_name=g_modules_per_category[i]
+          local module = prototypes.item[module_name]
+          local cat = module.category
+          local ok = ((not recipe.allowed_module_categories)
+                        or recipe.allowed_module_categories[cat])
+          ok = ok and ((not machine_proto.allowed_module_categories)
+                        or machine_proto.allowed_module_categories[cat])
+          if ok and recipe.allowed_effects then
+            for eff,_value in pairs(module.module_effects) do
+              if not recipe.allowed_effects[eff] then
+                ok = false
+                break
+              end
             end
           end
-        end
-        if ok then
-          table.insert(the_flags,{type="item",name=module.name})
+          if ok then
+            mflags=mflags+1
+            the_flags[mflags] = {type="item",name=module.name}
+          end
         end
       end
 
-      table.insert(flags,{sig,the_flags})
+      nflags=nflags+1
+      flags[nflags] = {sig,the_flags}
     end
   end
 
@@ -594,6 +652,7 @@ local function build_recipe_info_combinator(entity, machines)
   end
 
   -- TODO: if these are even desired
+  -- TODO: add right-aliases to flag_matrix
   connect_output(build_sparse_matrix(builder,buffer2,matrix,"ri.matrix.",aliases,false,false))
   connect_output(build_flag_matrix(builder,buffer2,flags,"ri.flag.",aliases))
 

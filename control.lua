@@ -24,6 +24,7 @@ end
 
 local function destroy_components(entity)
     -- Destroy recipe combinator components that are children of this item
+    -- FIXME seemingly doesn't give the combinator back
     local children = entity.surface.find_entities_filtered{area=entity.bounding_box}
     local undo_info = {}
     for i,child in ipairs(children) do
@@ -40,7 +41,6 @@ local function on_died(ev, mined_by_robot)
         and entity.name == "recipe-combinator-main"
     then
         destroy_components(entity)
-
         -- Close players' windows
         for _,player in pairs(game.players) do
             if player.gui.screen[gui.WINDOW_ID] then
