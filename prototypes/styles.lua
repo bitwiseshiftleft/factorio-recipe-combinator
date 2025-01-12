@@ -15,6 +15,13 @@ styles["recipe-combinator_indented_checkbox_row"] = {
     vertical_align = "center"
 }
   
+styles["recipe-combinator_checkbox_row"] = {
+    type = "horizontal_flow_style",
+    left_padding = 8,
+    right_padding = 8,
+    vertical_align = "center"
+}
+  
 
 styles["recipe-combinator_stretch"] = {
     type = "empty_widget_style",

@@ -337,7 +337,7 @@ local function init()
   cache_modules()
 end
 
-local function build_sparse_matrix(builder,input,rows,prefix,aliases,flags_only,multiply_by_input)
+local function build_sparse_matrix(args)
   -- given an input of the form
   -- {sig1, {{sig1a,4}, {sig1b,123}}} or similar
   -- {sig2, ...}
@@ -352,19 +352,12 @@ local function build_sparse_matrix(builder,input,rows,prefix,aliases,flags_only,
   -- by one of its products), this might be more efficient using aliases
   -- In that case, pass the aliases as {sig1_alias, sig1}
   -- to indicate that sig1_alias's row should be the same as sig1's row
-  local columns = {}
-  local rowsig,combo,entry,colsig
-  local idx_data = {}
-  local jdx_data = {}
-  local jdx_dict = {}
-  local jdx_count = {}
-  local jdx_value
-  local entry_data = {}
-  local entry_dict = {}
-  local idx_dict = {}
-
-  prefix = prefix or "sparse_matrix."
-  aliases = aliases or {}
+  local builder,input,rows=args.builder,args.input,args.rows
+  local prefix,aliases=(args.prefix or "sparse_matrix."),(args.aliases or {})
+  local flags_only,multiply_by_input = args.flags_only,args.multiply_by_input
+  local entry_data,entry_dict,idx_data,idx_dict = {},{},{},{}
+  local columns,jdx_dict,jdx_data,jdx_count = {},{},{},{}
+  local rowsig,combo,entry,colsig,jdx_value
 
   for _idx,row in ipairs(rows) do
     rowsig,combo = row[1],row[2]
@@ -501,11 +494,21 @@ local function build_sparse_matrix(builder,input,rows,prefix,aliases,flags_only,
   end
 end
 
-local function build_recipe_info_combinator(entity, machines)
+local function build_recipe_info_combinator(args)
+  -- parse args
+  local entity                    = args.entity
+  local machines                  = args.machines
+  local output_allowed_modules    = args.output_allowed_modules
+  local output_recipe_ingredients = args.output_recipe_ingredients
+  local output_recipe_products    = args.output_recipe_products
+  local alias_recipe_products     = args.alias_recipe_products
+  local alias_recipe_ingredients  = args.alias_recipe_ingredients
+  local output_crafting_machine   = args.output_crafting_machine
+
+  local one_module_per_category   = true
+
   local builder = Builder:new(entity.surface, entity.position, entity.force)
-  local aliases = {}
-  local naliases = 0
-  local aliases_dict = {}
+  local aliases,naliases,aliases_dict = {},0,{}
 
   -- Set the entity's control info
   local behavior = entity.get_or_create_control_behavior()
@@ -529,72 +532,84 @@ local function build_recipe_info_combinator(entity, machines)
     end
   end
 
-  local crafting_times = {}
-  local ncrafting_times = 0
-  local matrix = {}
   local crafting_time_output = {type="virtual", name="signal-T"} -- TODO: get from config
-  local valid = {}
-  local nvalid = 0
-  local flags = {}
-  local nflags = 0
+  local matrix,nmatrix = {},0
+  local valid,nvalid = {},0
+  local flags,nflags = {},0
   local module_category_to_module = {}
 
-  local one_module_per_category = true
-  
+  local function alias(item,recipe)
+    local item_str = item.type .. ":" .. item.name
+    if not aliases_dict[item_str] then
+      aliases_dict[item_str] = recipe
+      naliases=naliases+1
+      aliases[naliases] = {{type=item.type,name=item.name},sig}
+      nvalid=nvalid+1
+      valid[nvalid] = {{type=item.type,name=item.name},1}
+    end
+  end
+
   -- iterate through the recipes in the given categories
   for category,_ in pairs(crafting_time_scale) do
-    local matrix_count=0
     local machine_proto=category_to_machine_proto[category]
     local machine_has_modules = machine_proto.module_inventory_size and (machine_proto.module_inventory_size>0)
     for name,recipe in pairs(prototypes.get_recipe_filtered{{filter="category",category=category}}) do
       local sig = {type="recipe",name=recipe.name}
-      local products = recipe.products
       nvalid=nvalid+1
       valid[nvalid] = {sig,1}
 
       local scaled_time = ceil(recipe.energy * crafting_time_scale[recipe.category])
-      ncrafting_times = ncrafting_times+1
-      crafting_times[ncrafting_times] = {sig,scaled_time}
       local linear_combo = {}
       local ncombo=0
       -- TODO: deal with probabilities?
 
-      for idx=1,#products do
-        local product=products[idx]
-        -- Default recipes, for specifying as an item instead of as a recipe
-        -- TODO: is this the logic the game engine uses to assign them?
-        local product_str = product.type .. ":" .. product.name
-        if not aliases_dict[product_str] then
-          aliases_dict[product_str] = recipe
-          naliases=naliases+1
-          aliases[naliases] = {{type=product.type,name=product.name},sig}
-          nvalid=nvalid+1
-          valid[nvalid] = {{type=product.type,name=product.name},1}
+      ncombo=ncombo+1
+      linear_combo[ncombo]={crafting_time_output,scaled_time}
+
+      if output_recipe_products or alias_recipe_products then
+        local products = recipe.products
+        for idx=1,#products do
+          local product=products[idx]
+          -- Default recipes, for specifying as an item instead of as a recipe
+          -- TODO: is this the logic the game engine uses to assign them?
+          local product_str = product.type .. ":" .. product.name
+          if alias_recipe_products then alias(product,recipe) end
+          if output_recipe_products then
+            local amt = product.amount or (product.amount_min + product.amount_max)/2
+            ncombo=ncombo+1
+            linear_combo[ncombo]={{type=product.type, name=product.name},-amt}
+          end
         end
-        
-        local amt = product.amount or (product.amount_min + product.amount_max)/2
-        ncombo=ncombo+1
-        linear_combo[ncombo]={{type=product.type, name=product.name},-amt}
       end
-      local ingredients=recipe.ingredients
-      for idx=1,#ingredients do
-        local ingredient=ingredients[idx]
-        ncombo=ncombo+1
-        linear_combo[ncombo]={{type=ingredient.type, name=ingredient.name},ingredient.amount}
+
+      if output_recipe_ingredients or alias_recipe_ingredients then
+        local ingredients=recipe.ingredients
+        for idx=1,#ingredients do
+          local ingredient=ingredients[idx]
+          if alias_recipe_ingredients then alias(ingredient,recipe) end
+          if output_recipe_ingredients then
+            ncombo=ncombo+1
+            linear_combo[ncombo]={{type=ingredient.type, name=ingredient.name},ingredient.amount}
+          end
+        end
       end
-      matrix_count=matrix_count+1
-      matrix[matrix_count]={sig,linear_combo}
+
+      if ncombo > 0 then
+        nmatrix=nmatrix+1
+        matrix[nmatrix]={sig,linear_combo}
+      end
 
       -- OK, what about module effects and other flags
       local the_flags    = {}
       local mflags = 0
-      if category_to_machine[category] then
+
+      if output_crafting_machine and category_to_machine[category] then
         mflags=mflags+1
         the_flags[mflags] = {type="item",name=category_to_machine[category]}
       end
 
       -- what modules are allowed?
-      if machine_has_modules then
+      if output_allowed_modules and machine_has_modules then
         for idx=1,#g_modules_per_category do
           local module_name=g_modules_per_category[i]
           local module = prototypes.item[module_name]
@@ -640,10 +655,6 @@ local function build_recipe_info_combinator(entity, machines)
     description="ri.buffer2",green={input_buffer},red={valid_combi}
   }
 
-  -- Stages 3,4: just buffer
-  local buffer3 = builder:arithmetic{L=EACH,op="+",R=0,description="ri.buffer3",green={buffer2}}
-  local buffer4 = builder:arithmetic{L=EACH,op="+",R=0,description="ri.buffer4",green={buffer3}}
-
   -- widget to connect combi's output to the main entity
   local function connect_output(combi)
     if not combi then return end
@@ -651,20 +662,15 @@ local function build_recipe_info_combinator(entity, machines)
     combi.get_wire_connector(ORED,true).  connect_to(entity.get_wire_connector(ORED,  true))
   end
 
-  -- TODO: if these are even desired
-  -- TODO: add right-aliases to flag_matrix
-  connect_output(build_sparse_matrix(builder,buffer2,matrix,"ri.matrix.",aliases,false,false))
-  connect_output(build_flag_matrix(builder,buffer2,flags,"ri.flag.",aliases))
+  if nmatrix > 0 then
+    connect_output(build_sparse_matrix{
+      builder=builder,input=buffer2,rows=matrix,prefix="ri.matrix.",aliases=aliases
+    })
+  end
 
-  if crafting_time_output then
-    local times_combinator = builder:constant_combi(crafting_times,"ri.crafting_times")
-    local output_time = builder:arithmetic{
-      L=EACH,NL=NRED,op="*",R=EACH,NR=NGREEN,
-      out=crafting_time_output,
-      red={times_combinator},green={buffer4},
-      description="ri.crafting_time_output"
-    }
-    connect_output(output_time)
+  -- TODO: add right-aliases to flag_matrix
+  if nflags > 0 then
+    connect_output(build_flag_matrix(builder,buffer2,flags,"ri.flag.",aliases))
   end
 end
 
