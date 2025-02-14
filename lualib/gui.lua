@@ -1,6 +1,7 @@
 local flib_gui = require "__flib__.gui"
 local util = require "__core__.lualib.util"
 local circuit = require "lualib.circuit"
+local tagged_entity = require "lualib.tagged_entity"
 
 local M = {}
 local WINDOW_ID = "recipe-combinator-window"
@@ -79,11 +80,7 @@ local function rebuild_active_combinator(player_index)
   if not entity then return end
 
   local rollup = rollup_gui_state(window)
-  if rollup then
-    -- save info in the entity description
-    entity.combinator_description = serpent.block(rollup)
-  end
-
+  tagged_entity.set_tags(entity, rollup)
   circuit.rebuild_combinator(entity)
 end
 
@@ -168,7 +165,7 @@ local function checkbox_row(args)
     else
       local box2 = util.merge{{
         type = "checkbox",
-        style = "checkbox",
+        style = (box.type == "checkbox") and "checkbox" or nil,
         state = false,
         enabled = enabled,
         handler = {
@@ -197,6 +194,11 @@ local function checkbox_row(args)
     name=args.name and prefix..args.name }
 end
 
+local function tooltip(name)
+  return {type="sprite", sprite="info_no_border", style="recipe-combinator_tooltip_sprite",
+    tooltip={"recipe-combinator-gui.tooltip-"..name}}
+end
+
 local function open(player_index, entity)
   if not player_index then return end
   local player = game.get_player(player_index)
@@ -215,8 +217,7 @@ local function open(player_index, entity)
     end
   end
 
-  local ok,load = serpent.load(entity.combinator_description)
-  load = ok and load or circuit.DEFAULT_ROLLUP
+  local load = tagged_entity.get_tags(entity) or circuit.DEFAULT_ROLLUP
 
   local stretch = {type="empty-widget",style="recipe-combinator_stretch"}
   local named, main_window
@@ -248,7 +249,8 @@ local function open(player_index, entity)
     }
   }
 
-  local machines_inner = {type="flow",direction="horizontal",children={}}
+  local machines_inner = {type="flow",direction="horizontal",children={},
+    style="recipe-combinator_unpadded_horizontal_flow"}
   local machines_outer = {type="flow",direction="vertical",children={machines_inner}}
   local rowidx,totalidx=0,0
   local function append_machine(machine)
@@ -270,7 +272,10 @@ local function open(player_index, entity)
   local main_frame = {
     name=prefix.."combi_config", type="frame", style="inside_shallow_frame_with_padding", direction="vertical",
     children = {
-      {type="label", caption={"recipe-combinator-gui.label-which-machines"}, style="bold_label"},
+      {type="flow", style="recipe-combinator_label_toolip", children={
+        {type="label", caption={"recipe-combinator-gui.label-which-machines"}, style="bold_label"},
+        tooltip("which-machines")
+      }},
       machines_outer,
       {type="line", style="recipe-combinator_section_divider_line"},
       {type="label", caption={"recipe-combinator-gui.label-input"}, style="bold_label"},
@@ -282,7 +287,10 @@ local function open(player_index, entity)
       }, all_enabled=true, load=load},
 
       {type="line", style="recipe-combinator_section_divider_line"},
-      {type="label", caption={"recipe-combinator-gui.label-one"}, style="bold_label"},
+      {type="flow", style="recipe-combinator_label_toolip", children={
+        {type="label", caption={"recipe-combinator-gui.label-one"}, style="bold_label"},
+        tooltip("section-one")
+      }},
       checkbox_row{row={
         { name="show_recipe", style=checkbox_header, caption = { "recipe-combinator-gui.show-recipe-checkbox" }, state = true },
         stretch,
@@ -319,9 +327,13 @@ local function open(player_index, entity)
       }, load=load},
 
       {type="line", style="recipe-combinator_section_divider_line"},
-      {type="label", caption={"recipe-combinator-gui.label-all"}, style="bold_label"},
+      {type="flow", style="recipe-combinator_label_toolip", children={
+        {type="label", caption={"recipe-combinator-gui.label-all"}, style="bold_label"}
+        -- tooltip("section-all")
+      }},
       checkbox_row{row={
-        { name="show_all_recipes", style=checkbox_header, caption = { "recipe-combinator-gui.show-all-recipes" }, state = false }
+        { name="show_all_recipes", style=checkbox_header, caption = { "recipe-combinator-gui.show-all-recipes" }, state = false },
+        tooltip("show-all-recipes")
       }, load=load}
     }
   }

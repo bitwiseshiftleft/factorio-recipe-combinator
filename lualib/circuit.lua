@@ -1,4 +1,5 @@
 local util = require "__core__.lualib.util"
+local tagged_entity = require "lualib.tagged_entity"
 local M = {}
 
 local band = bit32.band
@@ -656,9 +657,9 @@ local function build_recipe_info_combinator(args)
             local ingredient_str = ingredient.type .. ":" .. ingredient.name
             if not item_to_flags_ptr[ingredient_str] then
               add_to_matrices({type=ingredient.type, name=ingredient.name})
-              item_to_flags_ptr[ingredient_str] = sparse_flags
+              item_to_flags_ptr[ingredient_str] = the_sparse_flags
             elseif output_all_recipes then
-              -- table.insert(item_to_flags_ptr[ingredient_str],{sig,1})
+              table.insert(item_to_flags_ptr[ingredient_str],{sig,1})
             end
           end
         end
@@ -669,9 +670,9 @@ local function build_recipe_info_combinator(args)
             local product_str = product.type .. ":" .. product.name
             if not item_to_flags_ptr[product_str] then
               add_to_matrices({type=product.type, name=product.name})
-              item_to_flags_ptr[product_str] = sparse_flags
+              item_to_flags_ptr[product_str] = the_sparse_flags
             elseif output_all_recipes then
-              -- table.insert(item_to_flags_ptr[product_str],{sig,1})
+              table.insert(item_to_flags_ptr[product_str],{sig,1})
             end
           end
         end
@@ -726,8 +727,8 @@ end
 local DEFAULT_ROLLUP = {
   machines = {"assembling-machine-3"},
   input_recipe = false,
-  input_ingredients = true,
-  input_product = false,
+  input_ingredients = false,
+  input_product = true,
   show_ingredients = true,
   show_ingredients_neg = false,
   show_ingredients_ti = true,
@@ -752,6 +753,7 @@ local function rollup_state_to_build_args(entity, rollup)
   -- Turn a rollup state into build args
   -- the rollup state is not hierarchical, and includes state for disabled functions
   -- (eg a signal name for output time, when we aren't outputting time)
+  rollup = rollup or DEFAULT_ROLLUP
   local ret = {
     entity                      = entity,
     machines                    = rollup.machines,
@@ -773,18 +775,8 @@ local function rollup_state_to_build_args(entity, rollup)
 end
 
 local function rebuild_combinator(combinator)
-  local descr = combinator.combinator_description
-  local ok,load
-  if descr == "" or descr == nil then
-    load = DEFAULT_ROLLUP
-  else
-    ok,load = serpent.load(descr)
-    if not ok then
-      load = DEFAULT_ROLLUP
-      game.print("Recipe combinator: parse description failed!")
-    end
-  end
-  build_recipe_info_combinator(rollup_state_to_build_args(combinator, load))
+  local tags = tagged_entity.get_tags(combinator)
+  build_recipe_info_combinator(rollup_state_to_build_args(combinator, tags))
 end
 
 M.Builder = Builder

@@ -20,6 +20,26 @@ styles["recipe-combinator_checkbox_row"] = {
     right_padding = 8,
     vertical_align = "center"
 }
+
+styles["recipe-combinator_label_toolip"] = {
+    type = "horizontal_flow_style",
+    parent = "recipe-combinator_checkbox_row",
+    left_padding = 0,
+    right_padding = 0
+}
+
+  
+styles["recipe-combinator_unpadded_horizontal_flow"] = {
+    type = "horizontal_flow_style",
+    bottom_margin = -8
+}
+  
+styles["recipe-combinator_tooltip_sprite"] = {
+    type = "image_style",
+    size = 8,
+    stretch_image_to_widget_size = true,
+    left_margin = 2
+}
   
 styles["recipe-combinator_machine_picker"] = {
     type = "button_style",
