@@ -6,7 +6,6 @@ styles["recipe-combinator_section_divider_line"] = {
     top_margin=11,
     bottom_margin=11
 }
-  
 
 styles["recipe-combinator_indented_checkbox_row"] = {
     type = "horizontal_flow_style",
@@ -22,6 +21,11 @@ styles["recipe-combinator_checkbox_row"] = {
     vertical_align = "center"
 }
   
+  
+styles["recipe-combinator_checkbox_header"] = {
+    type = "checkbox_style",
+    parent = "checkbox"
+}
 
 styles["recipe-combinator_stretch"] = {
     type = "empty_widget_style",

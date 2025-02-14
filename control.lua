@@ -22,25 +22,13 @@ local function on_marked_for_deconstruction(ev)
     game.print("Event TODO: Marked for deconstruction")
 end
 
-local function destroy_components(entity)
-    -- Destroy recipe combinator components that are children of this item
-    -- FIXME seemingly doesn't give the combinator back
-    local children = entity.surface.find_entities_filtered{area=entity.bounding_box}
-    local undo_info = {}
-    for i,child in ipairs(children) do
-        if string.find(child.name, '^recipe%-combinator%-component%-') then
-            child.destroy()
-        end
-    end
-end
-
 local function on_died(ev, mined_by_robot)
     local entity = ev.entity or ev.ghost
     -- TODO: save undo information so that we can rebuild it
     if entity and entity.type ~= "entity-ghost"
         and entity.name == "recipe-combinator-main"
     then
-        destroy_components(entity)
+        circuit.destroy_components(entity)
         -- Close players' windows
         for _,player in pairs(game.players) do
             if player.gui.screen[gui.WINDOW_ID] then
@@ -54,12 +42,7 @@ local function on_built(ev)
     local entity = ev.created_entity
     if entity == nil then entity = ev.entity end
     if entity == nil or entity.name ~= "recipe-combinator-main" then return end
-    -- TODO select plants, other options ...
-    circuit.build_recipe_info_combinator{
-        entity=entity,
-        machines={"assembling-machine-3", "chemical-plant", "oil-refinery"},
-        output_allowed_modules=output_allowed_modules
-    }
+    circuit.rebuild_combinator(entity)
 end
 
 local function on_settings_pasted(ev)

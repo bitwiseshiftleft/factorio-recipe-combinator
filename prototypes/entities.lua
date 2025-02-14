@@ -38,7 +38,45 @@ local hidden_combinator = {
     circuit_wire_max_distance = 9
 }
 
+-- Inserter for indicating (with its filters) what kind combinator we are
+local indicator_inserter = {
+    type = "inserter",
+    name = "recipe-combinator-component-indicator-inserter",
+    flags = { "not-blueprintable", "placeable-off-grid", "not-on-map" },
+    hand_base_picture   = util.empty_sprite(1),
+    hand_open_picture   = util.empty_sprite(1),
+    hand_closed_picture = util.empty_sprite(1),
+    hand_base_shadow    = nil,
+    hand_open_shadow    = nil,
+    hand_closed_shadow  = nil,
+    selectable_in_game = false,
+    hidden = true,
+    hidden_in_factoripedia = true,
+    destructible = false,
+    max_health = 1,
+    rotatable = false,
+	minable = nil,
+    extension_speed = 1,
+    rotation_speed = 1,
+    collision_box = {{-0.3,-0.3},{0.3,0.3}},
+    selection_box = {{-0.3,-0.3},{0.3,0.3}},
+    draw_circuit_wires = false,
+    collision_mask = {layers={}},
+    energy_per_movement = "1J",
+    energy_per_rotation = "1J",
+    energy_source = { type = "void", },
+    pickup_position = {0, 0},
+    insert_position = {0, 0},
+    draw_held_item = false,
+    draw_inserter_arrow = false,
+    chases_belt_frames = false,
+    filter_count = 4,
+    platform_picture = empty_sheet_4
+}
+
+
 data:extend{
+    indicator_inserter,
     util.merge{hidden_combinator,{
         type = "arithmetic-combinator",
         name = "recipe-combinator-component-arithmetic-combinator"
@@ -78,6 +116,7 @@ data:extend{
             icon = "__base__/graphics/icons/arithmetic-combinator.png",
             tint = {r=1,g=0.4,b=0.3,a=1}
         }},
+        flags = {"get-by-unit-number"},
         minable = {mining_time = 0.5, result = "recipe-combinator-main"},
         placeable_by = {item="recipe-combinator-main",count=1},
         sprites =  make_4way_animation_from_spritesheet{
