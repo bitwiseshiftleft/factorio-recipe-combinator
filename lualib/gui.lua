@@ -45,6 +45,24 @@ local function rollup_gui_state(window)
     end
   end
 
+  local machines,machines2 = {},{}
+  for name,val in pairs(ret) do
+    if string.match(name,"^machine%d+$") then
+      local idx = tonumber(string.gsub(name,"^machine",""),10)
+      if machines[val] == nil or machines[val] > idx then machines[val] = idx end
+      ret[name] = nil
+    end
+  end
+  for machine,prio in pairs(machines) do
+    table.insert(machines2,{machine,prio})
+  end
+  table.sort(machines2,function(a,b) return a[2]<b[2] end)
+  machines = {}
+  for _,machine in ipairs(machines2) do
+    table.insert(machines,machine[1])
+  end
+  ret.machines = machines
+
   return ret
 end
 
@@ -63,7 +81,7 @@ local function rebuild_active_combinator(player_index)
   local rollup = rollup_gui_state(window)
   if rollup then
     -- save info in the entity description
-    entity.combinator_description = serpent.line(rollup)
+    entity.combinator_description = serpent.block(rollup)
   end
 
   circuit.rebuild_combinator(entity)
@@ -81,6 +99,48 @@ handlers.radio = function(ev)
 end
 
 handlers.elem = function(ev)
+  rebuild_active_combinator(ev.player_index)
+end
+
+handlers.machine_prio = function(ev)
+  local elt = ev.element
+  local row = elt.parent
+  local rows = row.parent
+  local lastrow = rows.children[#rows.children]
+  local lastcol = lastrow.children[#lastrow.children]
+  if lastcol.elem_value then
+    -- add a new element
+    if #lastrow.children == 10 then
+      _,lastrow = flib_gui.add(rows,{type="flow"})
+    end
+    flib_gui.add(lastrow,{
+        type="choose-elem-button",elem_type="entity",style="recipe-combinator_machine_picker",
+        elem_filters={{filter="crafting-machine"}}, entity=nil,
+        name=prefix.."machine"..tostring(#rows.children*10 + #lastrow.children - 9),
+        handler = { [defines.events.on_gui_elem_changed] = handlers.machine_prio }
+    })
+  else
+    -- remove empty elements
+    while true do
+      local arow,prev
+      if #lastrow.children <= 1 and #rows.children <= 1 then break end
+      if #lastrow.children <= 1 then
+        arow = rows.children[#rows.children-1]
+        prev = arow.children[#arow.children]
+      else
+        prev = lastrow.children[#lastrow.children-1]
+      end
+      if prev.elem_value == nil then
+        lastrow.children[#lastrow.children].destroy()
+        if #lastrow.children == 0 then
+          lastrow.destroy()
+          lastrow = arow
+        end
+      else
+        break
+      end
+    end
+  end
   rebuild_active_combinator(ev.player_index)
 end
 
@@ -188,11 +248,34 @@ local function open(player_index, entity)
     }
   }
 
+  local machines_inner = {type="flow",direction="horizontal",children={}}
+  local machines_outer = {type="flow",direction="vertical",children={machines_inner}}
+  local rowidx,totalidx=0,0
+  local function append_machine(machine)
+    rowidx = rowidx+1
+    totalidx = totalidx+1
+    if rowidx == 11 then
+      rowidx=1
+    end
+    local button = {
+        type="choose-elem-button",elem_type="entity",style="recipe-combinator_machine_picker",
+        elem_filters={{filter="crafting-machine"}},entity=machine,
+        name=prefix.."machine"..tostring(totalidx),
+        handler = { [defines.events.on_gui_elem_changed] = handlers.machine_prio }}
+    table.insert(machines_inner.children,button)
+  end
+  for _,machine in ipairs(load.machines or {}) do append_machine(machine) end
+  append_machine(nil)
+
   local main_frame = {
     name=prefix.."combi_config", type="frame", style="inside_shallow_frame_with_padding", direction="vertical",
     children = {
+      {type="label", caption={"recipe-combinator-gui.label-which-machines"}, style="bold_label"},
+      machines_outer,
+      {type="line", style="recipe-combinator_section_divider_line"},
+      {type="label", caption={"recipe-combinator-gui.label-input"}, style="bold_label"},
       checkbox_row{row={
-        { type = "label", caption={"recipe-combinator-gui.index-row-caption"}, style="label"},
+        --{ type = "label", caption={"recipe-combinator-gui.index-row-caption"}, style="label"},
         { name="input_recipe",      state=true,caption={"recipe-combinator-gui.index-recipe"}},
         { name="input_ingredients", state=false,caption={"recipe-combinator-gui.index-ingredient"}},
         { name="input_product",     state=false,caption={"recipe-combinator-gui.index-product"}}

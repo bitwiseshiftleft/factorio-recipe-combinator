@@ -475,7 +475,7 @@ end
 local function build_recipe_info_combinator(args)
   -- parse args
   local entity                    = args.entity
-  local machines                  = args.machines
+  local machines                  = args.machines or {}
   local output_allowed_modules    = args.output_allowed_modules
   local output_recipe_ingredients = args.output_recipe_ingredients
   local output_recipe_products    = args.output_recipe_products
@@ -724,6 +724,7 @@ local function build_recipe_info_combinator(args)
 end
 
 local DEFAULT_ROLLUP = {
+  machines = {"assembling-machine-3"},
   input_recipe = false,
   input_ingredients = true,
   input_product = false,
@@ -752,8 +753,8 @@ local function rollup_state_to_build_args(entity, rollup)
   -- the rollup state is not hierarchical, and includes state for disabled functions
   -- (eg a signal name for output time, when we aren't outputting time)
   local ret = {
-    entity = entity,
-    machines = {"assembling-machine-3"}, -- TODO
+    entity                      = entity,
+    machines                    = rollup.machines,
     
     input_recipe_products       = rollup.input_product,
     input_recipe_ingredients    = rollup.input_ingredients,

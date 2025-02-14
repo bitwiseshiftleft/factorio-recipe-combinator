@@ -43,6 +43,7 @@ local indicator_inserter = {
     type = "inserter",
     name = "recipe-combinator-component-indicator-inserter",
     flags = { "not-blueprintable", "placeable-off-grid", "not-on-map" },
+    icon_draw_specification = { shift={0,0}, scale=0.6, scale_for_many=0.7 },
     hand_base_picture   = util.empty_sprite(1),
     hand_open_picture   = util.empty_sprite(1),
     hand_closed_picture = util.empty_sprite(1),
@@ -73,6 +74,44 @@ local indicator_inserter = {
     filter_count = 4,
     platform_picture = empty_sheet_4
 }
+
+local recipe_combinator = util.merge{data.raw["arithmetic-combinator"]["arithmetic-combinator"],{
+    name = "recipe-combinator-main",
+    icons = {{
+        icon = "__base__/graphics/icons/arithmetic-combinator.png",
+        tint = {r=1,g=0.4,b=0.3,a=1}
+    }},
+    flags = {"get-by-unit-number"},
+    minable = {mining_time = 0.5, result = "recipe-combinator-main"},
+    placeable_by = {item="recipe-combinator-main",count=1},
+    plus_symbol_sprites = {
+        north={filename="__recipe_combinator__/graphics/rled.png",x=0},
+        south={filename="__recipe_combinator__/graphics/rled.png",x=0},
+        east={filename="__recipe_combinator__/graphics/rled.png",x=0},
+        west={filename="__recipe_combinator__/graphics/rled.png",x=0}
+    },
+    sprites =  make_4way_animation_from_spritesheet{
+        layers = {
+            {
+                scale = 0.5,
+                filename = "__base__/graphics/entity/combinator/arithmetic-combinator.png",
+                width = 144,
+                height = 124,
+                tint = {r=1,g=0.4,b=0.3,a=1},
+                shift = util.by_pixel(0.5, 7.5)
+            },
+            {
+                scale = 0.5,
+                filename = "__base__/graphics/entity/combinator/arithmetic-combinator-shadow.png",
+                width = 148,
+                height = 156,
+                shift = util.by_pixel(13.5, 24.5),
+                draw_as_shadow = true
+            }
+        }
+    },
+    fast_replaceable_group = "recipe-combinator-main"
+}}
 
 
 data:extend{
@@ -110,35 +149,5 @@ data:extend{
         draw_circuit_wires = false,
         activity_led_light_offsets = { {0,0},{0,0},{0,0},{0,0} }
     },
-    util.merge{data.raw["arithmetic-combinator"]["arithmetic-combinator"],{
-        name = "recipe-combinator-main",
-        icons = {{
-            icon = "__base__/graphics/icons/arithmetic-combinator.png",
-            tint = {r=1,g=0.4,b=0.3,a=1}
-        }},
-        flags = {"get-by-unit-number"},
-        minable = {mining_time = 0.5, result = "recipe-combinator-main"},
-        placeable_by = {item="recipe-combinator-main",count=1},
-        sprites =  make_4way_animation_from_spritesheet{
-            layers = {
-                {
-                    scale = 0.5,
-                    filename = "__base__/graphics/entity/combinator/arithmetic-combinator.png",
-                    width = 144,
-                    height = 124,
-                    tint = {r=1,g=0.4,b=0.3,a=1},
-                    shift = util.by_pixel(0.5, 7.5)
-                },
-                {
-                    scale = 0.5,
-                    filename = "__base__/graphics/entity/combinator/arithmetic-combinator-shadow.png",
-                    width = 148,
-                    height = 156,
-                    shift = util.by_pixel(13.5, 24.5),
-                    draw_as_shadow = true
-                }
-            }
-        },
-        fast_replaceable_group = "recipe-combinator-main"
-    }}
+    recipe_combinator
 }

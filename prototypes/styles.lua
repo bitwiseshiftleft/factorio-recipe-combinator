@@ -21,6 +21,12 @@ styles["recipe-combinator_checkbox_row"] = {
     vertical_align = "center"
 }
   
+styles["recipe-combinator_machine_picker"] = {
+    type = "button_style",
+    parent = "slot_button",
+    right_margin = -4
+}
+  
   
 styles["recipe-combinator_checkbox_header"] = {
     type = "checkbox_style",
