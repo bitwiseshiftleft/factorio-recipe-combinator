@@ -318,6 +318,7 @@ local function open(player_index, entity)
       }, load=load},
       checkbox_row{row={
         { name="show_modules", style=checkbox_header, caption = { "recipe-combinator-gui.show-allowed-modules-checkbox" }, state = true },
+        stretch,
         { name="show_modules_opc", type="radiobutton", style="radiobutton", caption = { "recipe-combinator-gui.one-module-per-category-radio" }, state = true },
         { name="show_modules_all",type="radiobutton", style="radiobutton", caption = { "recipe-combinator-gui.all-modules-radio" }, state = false }
       }, load=load},
