@@ -123,7 +123,7 @@ local function on_entity_settings_pasted(ev)
     local old_tags = get_tags(ev.destination)
     local new_tags = get_tags(ev.source)
     if (old_tags or new_tags) and old_tags ~= new_tags then
-        game.print("Transfer tags: "..serpent.block(new_tags))
+        -- game.print("Transfer tags: "..serpent.block(new_tags))
         set_tags(ev.destination,new_tags)
         handle_tag_update(ev.destination)
     end

@@ -3,6 +3,7 @@ local tagged_entity = require "lualib.tagged_entity"
 local M = {}
 
 local band = bit32.band
+local bor  = bit32.bor
 local ceil=math.ceil
 local floor=math.floor
 
@@ -19,6 +20,8 @@ local IGREEN = defines.wire_connector_id.combinator_input_green
 local ORED   = defines.wire_connector_id.combinator_output_red
 local OGREEN = defines.wire_connector_id.combinator_output_green
 
+local QUALITY = {type="virtual", name="signal-Q"}
+
 local NGREEN = {green=true,red=false}
 local NRED   = {green=false,red=true}
 local NBOTH  = {green=true,red=true}
@@ -33,10 +36,27 @@ local EVERYTHING = {type="virtual",name="signal-everything"}
 local ITSELF = "__ITSELF__"
 local Builder = {}
 
-function Builder:constant_combi(signals,description)
+local g_have_quality = script.feature_flags.quality
+local g_all_qualities = {}
+local function cache_qualities()
+  local qps = {}
+  for name,p in pairs(prototypes.quality) do
+    if name ~= "quality-unknown" then
+      table.insert(qps,p)
+    end 
+  end
+  table.sort(qps,function(a,b) return a.level<b.level end)
+  g_all_qualities = {}
+  for i,q in ipairs(qps) do
+    g_all_qualities[i] = q.name
+  end
+end
+
+function Builder:constant_combi(signals,description,name)
     -- Create a constant combinator with the given signals
+    -- log(serpent.line(signals))
     local entity = self.surface.create_entity{
-        name="recipe-combinator-component-constant-combinator",
+        name=name or "recipe-combinator-component-constant-combinator",
         position=self.position, force=self.force
     }
     local con = entity.get_or_create_control_behavior()
@@ -44,6 +64,7 @@ function Builder:constant_combi(signals,description)
     local section = con.get_section(1)
     local filters = {}
     local j=0
+    local normal=g_all_qualities[1]
     for i=1,#signals do
         local sig=signals[i]
         j=j+1
@@ -51,9 +72,9 @@ function Builder:constant_combi(signals,description)
             j=j-most_at_once
             section.filters = filters
             section=con.add_section()
+            filters={}
         end
-        filters[j] = {value={type=sig[1].type,name=sig[1].name,comparator="=",quality="normal"},
-           min=sig[2]}
+        filters[j] = {value=util.merge{{comparator="=",quality=normal},sig[1]},min=sig[2]}
     end
     section.filters = filters
     entity.combinator_description = description or ""
@@ -177,10 +198,17 @@ function Builder:arithmetic(args)
 end
 
 function Builder:selector(args)
-  -- Create an arithmetic combinator
+  -- Create a selector combinator
   local combi = self:make_combi(util.merge{args,{selector=true}})
+  local sqfs=nil
+  if args.qual then sqfs=type(args.qual)=="table" end
   combi.get_or_create_control_behavior().parameters = {
-    operation=args.op, select_max=args.select_max, index_signal=args.index
+    operation=args.op, select_max=args.select_max, index_signal=args.index,
+    quality_filter=args.quality_filter,
+    quality_destination_signal=args.out,
+    quality_source_signal=(type(args.qual)=="table" and args.qual) or nil,
+    quality_source_static=(type(args.qual)=="string" and {name=args.qual}) or nil,
+    select_quality_from_signal=sqfs
   }
   return self:connect_inputs(args, combi)
 end
@@ -197,6 +225,7 @@ local function signed_lshift(x,n)
   if x >= 0x80000000 then x = x - 0x100000000 end
   return x
 end
+
 
 local function build_flag_matrix(builder,input,rows,prefix)
   -- TODO for UPS: deduplicate flags, so that only the meaning is duplicated
@@ -276,30 +305,6 @@ local function build_flag_matrix(builder,input,rows,prefix)
   return nonzero
 end
 
-
-local inverses_cache = {}
-local function div_mod_2_32(x,y)
-  -- Returns z such that, as int32_t's, (z*y) % (1<<32) = x
-  -- y must be odd
-  local z
-  if inverses_cache[y] then z = inverses_cache[y]
-  else
-    z = band(y,3) -- low 2 bits of x
-    z = band(z * band(2-y*z,-1), 0xFFFF)
-    z = band(z * band(2-y*z,-1), 0xFFFF)
-    z = band(z * band(2-y*z,-1), 0xFFFF)
-    z = band(z * band(2-y*z,-1), -1) -- fine because z < 2^16 going into this step
-    inverses_cache[y] = z
-  end
-  -- multiply z = x*z.
-  z = band(
-    band(z*band(x,0xFFFF),-1) +
-    band(z*bit32.rshift(x,16),0xFFFF)*0x10000,
-  -1)
-  if z >= 0x80000000 then z = z - 0x100000000 end
-  return z
-end
-
 g_all_modules = nil -- names of all modules
 g_modules_per_category = nil -- names of only the lowest-tier module per category
 local function cache_modules()
@@ -324,6 +329,7 @@ end
 
 local function init()
   cache_modules()
+  cache_qualities()
 end
 
 local function build_sparse_matrix(args)
@@ -348,8 +354,12 @@ local function build_sparse_matrix(args)
     -- game.print(serpent.line(rowsig) .. ": " .. serpent.line(combo))
     local rowsig_str = rowsig.type .. ":" .. rowsig.name
     for layer,col in ipairs(combo) do
+      -- "layer" meaning index of ingredient within the combo
       colsig,entry = col[1],col[2]
+      local colsig_str = colsig.type .. ":" .. colsig.name
+
       if not idx_data[layer] then
+        -- it's the first ingredient at that index.  Initialize it
         idx_data[layer] = {}
         jdx_data[layer] = {}
         jdx_dict[layer] = {}
@@ -357,21 +367,18 @@ local function build_sparse_matrix(args)
         entry_data[layer] = {}
         jdx_count[layer] = 0
       end
-      local colsig_str = colsig.type .. ":" .. colsig.name
       if not jdx_dict[layer][colsig_str] then
+        -- first copy of this ingredient
         jdx_value = 1+jdx_count[layer]
         jdx_count[layer] = jdx_value
-        jdx_data[layer][jdx_value] = {colsig,1+2*jdx_value}
+        jdx_data[layer][jdx_value] = {colsig,jdx_value}
         jdx_dict[layer][colsig_str] = jdx_value
       end
       jdx_value = jdx_dict[layer][colsig_str]
-      if jdx_value > 1 then
-        table.insert(idx_data[layer], {rowsig,jdx_value-1})
-        idx_dict[layer][rowsig_str] = jdx_value-1
-      end
-      local ent = div_mod_2_32(entry,1+2*jdx_value)
+      table.insert(idx_data[layer], {rowsig,jdx_value})
+      idx_dict[layer][rowsig_str] = jdx_value
       if not flags_only then
-        table.insert(entry_data[layer], {rowsig,ent})
+        table.insert(entry_data[layer], {rowsig,entry})
       end
     end
   end
@@ -400,8 +407,20 @@ local function build_sparse_matrix(args)
       green = {input}, red = {idx_combi},
       description=prefix.."get_idx"..tostring(layer)
     }
-    local apply_idx = builder:selector{
-      op="select", index=idx_signal, select_max=false,
+    if g_have_quality and args.use_qual then
+      jdx_combi = builder:selector{
+        op="quality-transfer",
+        out=EACH,
+        qual=QUALITY,
+        red={args.use_qual},  green={jdx_combi},
+        description=prefix.."jdx_qual"..tostring(layer)
+      }
+    end
+    local apply_jdx = builder:decider{
+      decisions = {
+        {L=EACH,NL=NRED,op="=",R=idx_signal,NR=NGREEN},
+      },
+      output = {{out=EACH,set_one=true}},
       green = {get_idx}, red = {jdx_combi},
       description=prefix.."apply_jdx"..tostring(layer)
     }
@@ -409,7 +428,7 @@ local function build_sparse_matrix(args)
     local this_output
     if flags_only then
       -- accumulate
-      this_output = apply_idx
+      this_output = apply_jdx
     else
       local ent_combi = builder:constant_combi(entry_data[layer], prefix.."ent"..tostring(layer))
       local dotp
@@ -433,7 +452,7 @@ local function build_sparse_matrix(args)
       end
       this_output = builder:arithmetic{
         L=EACH,NL=NGREEN,op="*",R=idx_signal,NR=NRED,out=EACH,
-        green = {apply_idx}, red = {dotp},
+        green = {apply_jdx}, red = {dotp},
         description=prefix.."output"..tostring(layer)
       }
     end
@@ -535,31 +554,95 @@ local function build_recipe_info_combinator(args)
     end
   end
 
-  local matrix,nmatrix = {},0
-  local valid,nvalid = {},0
-  local flags,nflags = {},0
-  local sparse_flags,nsparse_flags = {},0
   local module_category_to_module = {}
 
-  local linear_combo,ncombo,the_flags,mflags,the_sparse_flags,msparse_flags
-  local function add_to_matrices(sig)
-    if ncombo > 0 then
-      nmatrix=nmatrix+1
-      matrix[nmatrix]={sig,linear_combo}
+  -- FLAG_DENSE: use a dense flags-matrix layout.  Better for modules.
+  -- Can't support multiply or quality.  All entries must be 1
+  local FLAG_DENSE        = 1
+
+  -- FLAG_MULTIPLY: multiply this entry by the input quantity
+  local FLAG_MULTIPLY     = 2
+
+  -- FLAG_NOQUAL: this output's quality isn't based on the input quality
+  local FLAG_NOQUAL       = 4
+  if not g_have_quality then FLAG_NOQUAL = 0 end
+
+  -- FLAG_NORMAL_INPUT: this row is only valid if the input has normal quality (e.g. a fluid)
+  local FLAG_NORMAL_INPUT = 8
+  if not g_have_quality then FLAG_NORMAL_INPUT = 0 end
+
+  -- FLAG_RED: output this info on the red wire (TODO)
+  -- FLAG_GREEN: output this info on the green wire (TODO)
+  local FLAG_RED,FLAG_GREEN = 16,32
+
+  -- set_combo(outsig,outval,flags)
+  -- This function creates a matrix entry for [current row] -> {outsig, outval}
+  -- There may be multiple matrices, with properties dictated by the flags
+  local sigcombo_by_flags = nil
+  local function set_combo(outsig,outval,flags)
+    if not sigcombo_by_flags[flags] then
+      sigcombo_by_flags[flags] = {}
     end
-    if mflags > 0 then
-      nflags=nflags+1
-      flags[nflags] = {sig,the_flags}
-    end
-    if msparse_flags > 0 then
-      nsparse_flags = nsparse_flags+1
-      sparse_flags[nsparse_flags] = {sig,the_sparse_flags}
-    end
-    nvalid=nvalid+1
-    valid[nvalid] = {sig,1}
+    table.insert(sigcombo_by_flags[flags], band(flags,FLAG_DENSE)==0 and {outsig,outval} or outsig)
   end
 
   local item_to_flags_ptr = {}
+  
+  -- commit_combo(sig)
+  -- This function loads the current matrix rows into the matrices,
+  -- where the row is indexed by `sig`.  It also inserts the signal
+  -- into valid, or into valid_norm, as appropriate
+  local valid,nvalid = {},0
+  local matrices_by_flags = {}
+  local valid_at_all_qualities = {}
+
+  local function append_to_matrices(asig, flags, row)
+    -- log(serpent.line(asig) .. " ==> " .. serpent.line(row))
+    if band(flags,FLAG_NORMAL_INPUT)==0 then
+        valid_at_all_qualities[asig.type..":"..asig.name] = true
+    end
+    if matrices_by_flags[flags] then
+      table.insert(matrices_by_flags[flags], {asig,row})
+    else
+      matrices_by_flags[flags] = {{asig,row}}
+    end
+  end
+
+  local function commit_combo(asig)
+    local have_any = false
+    for flags,combo in pairs(sigcombo_by_flags) do
+      have_any = true
+      append_to_matrices(asig, flags, combo)
+    end
+    if have_any then
+      nvalid = nvalid+1
+      valid[nvalid] = {asig,1}
+    end
+  end
+
+  local backup_sigcombo_by_flags
+  local function temporary_sigcombos(extra_flags)
+    -- Make a temporary copy of `sigcombo_by_flags`
+    -- For each entry, merge its flags with extra_flags
+    backup_sigcombo_by_flags = sigcombo_by_flags
+    sigcombo_by_flags = table.deepcopy(backup_sigcombo_by_flags)
+    if extra_flags ~= 0 then
+      for flags,_ in pairs(backup_sigcombo_by_flags) do
+        if bor(flags,extra_flags) == flags then
+          -- pass
+        elseif not sigcombo_by_flags[bor(flags,extra_flags)] then
+          sigcombo_by_flags[bor(flags,extra_flags)] = sigcombo_by_flags[flags]
+          sigcombo_by_flags[flags] = nil
+        else
+          local row = sigcombo_by_flags[bor(flags,extra_flags)]
+          for _,r in ipairs(sigcombo_by_flags[flags]) do
+            table.insert(row,r)
+          end
+          sigcombo_by_flags[flags] = nil
+        end
+      end
+    end
+  end
 
   -- iterate through the recipes in the given categories
   for category,_ in pairs(crafting_time_scale) do
@@ -568,22 +651,30 @@ local function build_recipe_info_combinator(args)
     for name,recipe in pairs(prototypes.get_recipe_filtered{{filter="category",category=category}}) do
       local suitable = string.find(name,"^parameter%-%d$") == nil
       if suitable then
+        -- TODO: deal with probabilities?
+        sigcombo_by_flags = {}
         local sig = {type="recipe",name=recipe.name}
         local scaled_time = ceil(recipe.energy * crafting_time_scale[recipe.category])
 
-        linear_combo,ncombo = {},0
-        the_sparse_flags,msparse_flags = {},0
-        the_flags,mflags = {},0
+        local ingredients=recipe.ingredients
+        local all_fluid=true
+        for idx=1,#ingredients do
+          local ingredient=ingredients[idx]
+          if ingredient.type == "item" then all_fluid = false end
+          if output_recipe_ingredients then
+            local fluid = (ingredient.type == "fluid") and FLAG_NOQUAL or 0
+            set_combo({type=ingredient.type, name=ingredient.name},ingredient.amount,FLAG_MULTIPLY+fluid)
+          end
+        end
+        local flag_all_fluid = 0
+        if all_fluid then flag_all_fluid = FLAG_NORMAL_INPUT end
 
-        -- TODO: deal with probabilities?
         if output_crafting_time then
-          ncombo=ncombo+1
-          linear_combo[ncombo]={output_crafting_time,scaled_time} -- todo: scale or not
+          set_combo(output_crafting_time,scaled_time,FLAG_MULTIPLY + FLAG_NOQUAL + flag_all_fluid)
         end
 
         if output_recipe then
-          ncombo=ncombo+1
-          linear_combo[ncombo]={sig,1} -- todo: scale or not
+          set_combo(sig,1,FLAG_MULTIPLY + flag_all_fluid)
         end
 
         local products = recipe.products
@@ -594,16 +685,14 @@ local function build_recipe_info_combinator(args)
             -- TODO: is this the logic the game engine uses to assign them?
             local product_str = product.type .. ":" .. product.name
             local amt = product.amount or (product.amount_min + product.amount_max)/2
-            ncombo=ncombo+1
-            linear_combo[ncombo]={{type=product.type, name=product.name},-amt}
+            local fluid = (product.type == "fluid") and FLAG_NOQUAL or 0
+            set_combo({type=product.type, name=product.name},-amt,bor(FLAG_MULTIPLY+fluid, flag_all_fluid))
           end
         end
 
         -- OK, what about module effects and other flags
-
         if output_crafting_machine and category_to_machine[category] then
-          mflags=mflags+1
-          the_flags[mflags] = {type="item",name=category_to_machine[category]}
+          set_combo({type="item",name=category_to_machine[category]}, 1, FLAG_NOQUAL + flag_all_fluid)
         end
 
         -- what modules are allowed?
@@ -625,41 +714,42 @@ local function build_recipe_info_combinator(args)
               end
             end
             if ok then
-              mflags=mflags+1
-              the_flags[mflags] = {type="item",name=module.name}
+              set_combo({type="item",name=module.name}, 1, FLAG_DENSE + FLAG_NOQUAL + flag_all_fluid)
             end
           end
         end
 
-        local ingredients=recipe.ingredients
-        if output_recipe_ingredients then
-          for idx=1,#ingredients do
-            local ingredient=ingredients[idx]
-            if output_recipe_ingredients then
-              ncombo=ncombo+1
-              linear_combo[ncombo]={{type=ingredient.type, name=ingredient.name},ingredient.amount}
-            end
-          end
-        end
-
-        if output_all_recipes then 
-          msparse_flags=msparse_flags + 1
-          the_sparse_flags[msparse_flags] = {sig,1}
-        end
-        
         if input_recipe then
-          add_to_matrices(sig)
+          commit_combo(sig)
         end
 
         if input_recipe_ingredients then
           for idx=1,#ingredients do
             local ingredient=ingredients[idx]
+            local component_sig = {type=ingredient.type, name=ingredient.name}
             local ingredient_str = ingredient.type .. ":" .. ingredient.name
+            local fluid = bor(flag_all_fluid,(ingredient.type == "fluid") and FLAG_NORMAL_INPUT or 0)
             if not item_to_flags_ptr[ingredient_str] then
-              add_to_matrices({type=ingredient.type, name=ingredient.name})
-              item_to_flags_ptr[ingredient_str] = the_sparse_flags
+              -- not seen before
+              if output_all_recipes then
+                temporary_sigcombos(fluid) -- unlink from the recipe copy
+                if sigcombo_by_flags[fluid] then
+                  table.insert(sigcombo_by_flags[fluid],{sig,1})
+                else
+                  sigcombo_by_flags[fluid] = {{sig,1}}
+                end
+              end
+              item_to_flags_ptr[ingredient_str] = sigcombo_by_flags
+              commit_combo(component_sig)
+              if output_all_recipes then sigcombo_by_flags = backup_sigcombo_by_flags end
             elseif output_all_recipes then
-              table.insert(item_to_flags_ptr[ingredient_str],{sig,1})
+              if item_to_flags_ptr[ingredient_str][fluid] then
+                table.insert(item_to_flags_ptr[ingredient_str][fluid],{sig,1})
+              else
+                local tmp = {{sig,1}}
+                item_to_flags_ptr[ingredient_str][fluid] = tmp
+                append_to_matrices(component_sig,fluid,tmp)
+              end
             end
           end
         end
@@ -667,36 +757,123 @@ local function build_recipe_info_combinator(args)
         if input_recipe_products then
           for idx=1,#products do
             local product=products[idx]
+            local component_sig = {type=product.type, name=product.name}
             local product_str = product.type .. ":" .. product.name
+            local fluid = bor(flag_all_fluid, (product.type == "fluid") and FLAG_NORMAL_INPUT or 0)
             if not item_to_flags_ptr[product_str] then
-              add_to_matrices({type=product.type, name=product.name})
-              item_to_flags_ptr[product_str] = the_sparse_flags
+              -- not seen before
+              if output_all_recipes then
+                temporary_sigcombos(fluid) -- unlink from the recipe copy
+                sigcombo_by_flags = table.deepcopy(sigcombo_by_flags)
+                if sigcombo_by_flags[fluid] then
+                  table.insert(sigcombo_by_flags[fluid],{sig,1})
+                else
+                  sigcombo_by_flags[fluid] = {{sig,1}}
+                end
+              end
+              item_to_flags_ptr[product_str] = sigcombo_by_flags
+              commit_combo(component_sig)
+              if output_all_recipes then sigcombo_by_flags = backup_sigcombo_by_flags end
             elseif output_all_recipes then
-              table.insert(item_to_flags_ptr[product_str],{sig,1})
+              if item_to_flags_ptr[product_str][fluid] then
+                table.insert(item_to_flags_ptr[product_str][fluid],{sig,1})
+              else
+                local tmp = {{sig,1}}
+                item_to_flags_ptr[product_str][fluid] = tmp
+                append_to_matrices(component_sig,fluid,tmp)
+              end
             end
           end
         end
-
       end
     end
   end
 
-  -- Extend out to latency 5.
+  -- Extend out to latency 6.
   -- Stage 1: input buffer.  Connect to entity's inputs
   local input_buffer = builder:arithmetic{L=EACH,op="+",R=0,description="ri.input_buffer"}
   input_buffer.get_wire_connector(IGREEN,true).connect_to(entity.get_wire_connector(IGREEN,true))
   input_buffer.get_wire_connector(IRED,  true).connect_to(entity.get_wire_connector(IRED,  true))
+  
+  local end_of_input_stage
+  local quality_buffer
+  local end_of_input_stage_normal_only
+  if g_have_quality then
+    local valid2,nvalid2 = {},0
+    local literal_quality = {}
+    local decisions_getqual={}
+    -- Make a combinator with valid sigs at all levels
+    for idx,qual in ipairs(g_all_qualities) do
+      table.insert(literal_quality,{util.merge{QUALITY,{quality=qual}},idx})
+      for _,sigamt in ipairs(valid) do
+        local sig = sigamt[1]
+        if idx==1 or valid_at_all_qualities[sig.type..":"..sig.name] then
+          nvalid2=nvalid2+1
+          valid2[nvalid2] = {util.merge{sig,{quality=qual}},idx}
+        end
+      end
+      table.insert(decisions_getqual,{NL=NGREEN,L=ANYTHING,op="=",R=idx})
+      table.insert(decisions_getqual,{and_=true,NL=NRED,L=EACH,op="=",R=idx})
+    end
+    local valid2_combi = builder:constant_combi(valid2, "ri.valid")
+    local quality_list = builder:constant_combi(literal_quality, "ri.quals")
 
-  -- Stage 2: selection of one valid input
-  local valid_combi = builder:constant_combi(valid, "ri.valid")
-  local buffer2 = builder:decider{
-    decisions={
-      {NL=NGREEN,L=EACH,op="!=",R=0},
-      {and_=true,NL=NRED,L=EACH,op="!=",R=0}
-    },
-    output={{out=ANYTHING,WO=NGREEN}},
-    description="ri.buffer2",green={input_buffer},red={valid_combi}
-  }
+    -- Stage 2: selection of one valid input
+    local select_one = builder:decider{
+      decisions={
+        {NL=NGREEN,L=EACH,op="!=",R=0},
+        {and_=true,NL=NRED,L=EACH,op="!=",R=0}
+      },
+      output={{out=ANYTHING,WO=NGREEN}},
+      description="ri.buffer2",green={input_buffer},red={valid2_combi},
+      -- visible=true
+    }
+
+    -- Stage 2b a second copy, but output the quality selected instead
+    local select_one_getqual = builder:decider{
+      decisions={
+        {NL=NGREEN,L=EACH,op="!=",R=0},
+        {and_=true,NL=NRED,L=EACH,op="!=",R=0}
+      },
+      output={{out=ANYTHING,WO=NRED}},
+      description="ri.qual2",green={input_buffer},red={valid2_combi},
+    }
+
+    -- Stage 3a set quality to normal
+    end_of_input_stage = builder:selector{
+      op="quality-transfer", qual=g_all_qualities[0], out=EACH,
+      green={select_one}, description="ri.set_normal_qual",
+    }
+
+    -- Stage 3b extract if normal quality
+    -- TODO: only create if necessory
+    end_of_input_stage_normal_only = builder:selector{
+      op="quality-filter", qual=g_all_qualities[0],
+      red={select_one}, description="ri.check_normal_qual",
+    }
+
+    -- Stage 3c select quality
+    quality_buffer = builder:decider{
+      decisions=decisions_getqual,
+      output={{out=EACH}},
+      description="ri.getqual",green={select_one_getqual},red={quality_list},
+      -- visible=true
+    }
+  else
+    -- Stage 2: selection of one valid input
+    local valid_combi = builder:constant_combi(valid, "ri.valid")
+    local select_one = builder:decider{
+      decisions={
+        {NL=NGREEN,L=EACH,op="!=",R=0},
+        {and_=true,NL=NRED,L=EACH,op="!=",R=0}
+      },
+      output={{out=ANYTHING,WO=NGREEN}},
+      description="ri.buffer2",green={input_buffer},red={valid_combi}
+    }
+    -- Stage 3: buffer again (for parity with quality case)
+    end_of_input_stage = builder:arithmetic{L=EACH,op="+",R=0,description="ri.buffer3",green={select_one}}
+
+  end
 
   -- widget to connect combi's output to the main entity
   local function connect_output(combi)
@@ -705,22 +882,28 @@ local function build_recipe_info_combinator(args)
     combi.get_wire_connector(ORED,true).  connect_to(entity.get_wire_connector(ORED,  true))
   end
 
-  if nmatrix > 0 then
-    connect_output(build_sparse_matrix{
-      builder=builder,input=buffer2,rows=matrix,prefix="ri.matrix."
-    })
-  end
-
-  if nsparse_flags > 0 then
-    connect_output(build_sparse_matrix{
-      builder=builder,input=buffer2,rows=sparse_flags,prefix="ri.matrix.",
-      multiply_by_input=false
-    })
-  end
-
-  -- TODO: add right-aliases to flag_matrix
-  if nflags > 0 then
-    connect_output(build_flag_matrix(builder,buffer2,flags,"ri.flag."))
+  for flags,matrix in pairs(matrices_by_flags) do
+    local input=end_of_input_stage
+    -- log("Matrix, flags="..tostring(flags)..":\n"..serpent.line(matrix))
+    if g_have_quality and band(flags,FLAG_NORMAL_INPUT)>0 then
+      input=end_of_input_stage_normal_only
+    end
+    local use_qual = quality_buffer
+    if band(flags,FLAG_NOQUAL)>0 then
+      use_qual = nil
+    end
+    if band(flags,FLAG_DENSE)>0 then
+      -- TODO: add right-aliases to flag_matrix
+      -- NB: doesn't support quality
+      connect_output(build_flag_matrix(builder,input,matrix,"ri.matrix.flags"..tonumber(flags).."."))
+      -- game.print("Build flag matrix with "..tonumber(#matrix).." rows with flags="..tonumber(flags))
+    else 
+      connect_output(build_sparse_matrix{
+        builder=builder,input=input,rows=matrix,prefix="ri.matrix.flags"..tonumber(flags)..".",
+        multiply_by_input=band(flags,FLAG_MULTIPLY)>0,use_qual=use_qual
+      })
+      -- game.print("Build sparse matrix with "..tonumber(#matrix).." rows with flags="..tonumber(flags))
+    end
   end
 end
 
@@ -735,11 +918,11 @@ local DEFAULT_ROLLUP = {
   show_products = true,
   show_products_neg = true,
   show_products_ti = true,
+  show_time_signal = {type="virtual",name="signal-T"},
   show_recipe = true,
   show_recipe_neg = true,
   show_recipe_ti = true,
   show_time = false,
-  show_time_signal = nil,
   show_time_neg = false,
   show_time_ti = true,
   show_modules = false,
@@ -763,7 +946,7 @@ local function rollup_state_to_build_args(entity, rollup)
     input_recipe                = rollup.input_recipe,
 
     output_allowed_modules      = rollup.show_modules,
-    one_module_per_category     = not rollup.show_modules_opc,
+    one_module_per_category     = rollup.show_modules_opc,
     output_recipe_ingredients   = rollup.show_ingredients,
     output_recipe_products      = rollup.show_products,
     output_recipe               = rollup.show_recipe,

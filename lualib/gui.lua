@@ -349,8 +349,8 @@ local function open(player_index, entity)
 
   -- the signal states can't be restored by the script
   local show_time_sig = main_window[prefix.."combi_config"][prefix.."show_time_pane"][prefix.."show_time_signal"]
-  local sts_name = show_time_sig and string.gsub(show_time_sig.name,regex_prefix,"")
-  if sts_name and load and load[sts_name] then
+  local sts_name = "show_time_signal"
+  if show_time_sig and sts_name and load and load[sts_name] then
     show_time_sig.elem_value = load[sts_name]
   end
 
