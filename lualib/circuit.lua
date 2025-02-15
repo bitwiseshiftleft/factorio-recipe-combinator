@@ -657,17 +657,22 @@ local function build_recipe_info_combinator(args)
         local scaled_time = ceil(recipe.energy * crafting_time_scale[recipe.category])
 
         local ingredients=recipe.ingredients
+
+        -- Are all ingredients fluid?  If so, then the recipe does not accept quality
         local all_fluid=true
         for idx=1,#ingredients do
-          local ingredient=ingredients[idx]
-          if ingredient.type == "item" then all_fluid = false end
-          if output_recipe_ingredients then
-            local fluid = (ingredient.type == "fluid") and FLAG_NOQUAL or 0
-            set_combo({type=ingredient.type, name=ingredient.name},ingredient.amount,FLAG_MULTIPLY+fluid)
-          end
+          if ingredients[idx].type == "item" then all_fluid = false end
         end
         local flag_all_fluid = 0
         if all_fluid then flag_all_fluid = FLAG_NORMAL_INPUT end
+
+        if output_recipe_ingredients then
+          for idx=1,#ingredients do
+            local ingredient=ingredients[idx]
+            local fluid = (ingredient.type == "fluid") and FLAG_NOQUAL or flag_all_fluid
+            set_combo({type=ingredient.type, name=ingredient.name},ingredient.amount, FLAG_MULTIPLY+fluid)
+          end
+        end
 
         if output_crafting_time then
           set_combo(output_crafting_time,scaled_time,FLAG_MULTIPLY + FLAG_NOQUAL + flag_all_fluid)
@@ -682,11 +687,10 @@ local function build_recipe_info_combinator(args)
           for idx=1,#products do
             local product=products[idx]
             -- Default recipes, for specifying as an item instead of as a recipe
-            -- TODO: is this the logic the game engine uses to assign them?
             local product_str = product.type .. ":" .. product.name
             local amt = product.amount or (product.amount_min + product.amount_max)/2
-            local fluid = (product.type == "fluid") and FLAG_NOQUAL or 0
-            set_combo({type=product.type, name=product.name},-amt,bor(FLAG_MULTIPLY+fluid, flag_all_fluid))
+            local fluid = (product.type == "fluid") and FLAG_NOQUAL or flag_all_fluid
+            set_combo({type=product.type, name=product.name},-amt,FLAG_MULTIPLY+fluid)
           end
         end
 
@@ -728,7 +732,7 @@ local function build_recipe_info_combinator(args)
             local ingredient=ingredients[idx]
             local component_sig = {type=ingredient.type, name=ingredient.name}
             local ingredient_str = ingredient.type .. ":" .. ingredient.name
-            local fluid = bor(flag_all_fluid,(ingredient.type == "fluid") and FLAG_NORMAL_INPUT or 0)
+            local fluid = (ingredient.type == "fluid") and FLAG_NORMAL_INPUT or flag_all_fluid
             if not item_to_flags_ptr[ingredient_str] then
               -- not seen before
               if output_all_recipes then
@@ -759,7 +763,7 @@ local function build_recipe_info_combinator(args)
             local product=products[idx]
             local component_sig = {type=product.type, name=product.name}
             local product_str = product.type .. ":" .. product.name
-            local fluid = bor(flag_all_fluid, (product.type == "fluid") and FLAG_NORMAL_INPUT or 0)
+            local fluid = (product.type == "fluid") and FLAG_NORMAL_INPUT or flag_all_fluid
             if not item_to_flags_ptr[product_str] then
               -- not seen before
               if output_all_recipes then
