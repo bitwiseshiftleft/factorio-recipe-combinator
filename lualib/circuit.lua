@@ -1,5 +1,6 @@
 local util = require "__core__.lualib.util"
 local tagged_entity = require "lualib.tagged_entity"
+local matrix_builder = require "lualib.matrix_builder"
 local M = {}
 
 local band = bit32.band
@@ -32,11 +33,18 @@ local EACH = {type="virtual",name="signal-each"}
 local ANYTHING = {type="virtual",name="signal-anything"}
 local EVERYTHING = {type="virtual",name="signal-everything"}
 
+-- localize the matrix builder flags
+local FLAG_DENSE        = matrix_builder.FLAG_DENSE
+local FLAG_GREEN        = matrix_builder.FLAG_GREEN
+local FLAG_RED          = matrix_builder.FLAG_RED
+local FLAG_NORMAL_INPUT = matrix_builder.FLAG_NORMAL_INPUT
+local FLAG_MULTIPLY     = matrix_builder.FLAG_MULTIPLY
+local FLAG_NOQUAL       = matrix_builder.FLAG_NOQUAL
+
 -- When used as a builder interface, takes input from itself
 local ITSELF = "__ITSELF__"
 local Builder = {}
 
-local g_have_quality = script.feature_flags.quality
 local g_all_qualities = {}
 local function cache_qualities()
   local qps = {}
@@ -240,6 +248,7 @@ local function build_flag_matrix(builder,input,rows,prefix)
     local rowsig_str = rowsig.type .. ":" .. rowsig.name
     local bitses = {}
     for _,colsig in ipairs(cols) do
+      colsig = colsig[1] -- = 1 always
       local colsig_str = colsig.type .. ":" .. colsig.name
 
       -- register the column if it doesn't exist
@@ -407,7 +416,7 @@ local function build_sparse_matrix(args)
       green = {input}, red = {idx_combi},
       description=prefix.."get_idx"..tostring(layer)
     }
-    if g_have_quality and args.use_qual then
+    if HAVE_QUALITY and args.use_qual then
       jdx_combi = builder:selector{
         op="quality-transfer",
         out=EACH,
@@ -492,317 +501,24 @@ local function destroy_components(entity)
   end
 end
 
-local function build_recipe_info_combinator(args)
-  -- parse args
-  local entity                    = args.entity
-  local machines                  = args.machines or {}
-  local output_allowed_modules    = args.output_allowed_modules
-  local output_recipe_ingredients = args.output_recipe_ingredients
-  local output_recipe_products    = args.output_recipe_products
-  local output_recipe             = args.output_recipe
-  local input_recipe_products     = args.input_recipe_products
-  local input_recipe_ingredients  = args.input_recipe_ingredients
-  local input_recipe              = args.input_recipe
-  local output_crafting_machine   = args.output_crafting_machine
-  local one_module_per_category   = args.one_module_per_category
-  local output_crafting_time      = args.output_crafting_time
-  local output_all_recipes        = args.output_all_recipes -- TODO
-  -- TODO: more!  Scales, red/green, etc
 
-
-  local module_table = output_allowed_modules and (
-    (one_module_per_category and g_modules_per_category) or g_all_modules
-  ) or {}
-
+local function build_matrix_combinator(entity, matrix)
   local builder = Builder:new(entity.surface, entity.position, entity.force)
 
-  destroy_components(entity)
 
-  -- Set the entity's control info
-  local behavior = entity.get_or_create_control_behavior()
-  behavior.parameters = {first_constant=0, operation="+", second_constant=0, output_signal=nil}
-
-  local indicator = entity.surface.create_entity{
-      name="recipe-combinator-component-indicator-inserter",
-      position=entity.position, entity=entity.force
-  }
-  indicator.inserter_filter_mode = "whitelist"
-  indicator.use_filters = true
-  local n_indicator = 0
-
-  local crafting_time_scale = {}
-  local absolute_time_scale = 60 -- i.e. in ticks
-  local category_to_machine = {}
-  local category_to_machine_proto = {}
-
-  -- parse out the machines into speeds and categories
-  for _,machine in ipairs(machines) do
-    local quality = nil -- TODO
-    local machine_proto = prototypes.entity[machine]
-    local item_to_place = machine_proto.items_to_place_this[1]
-    if item_to_place and n_indicator < 4 then
-      -- add it to the indicator inserter
-      n_indicator=n_indicator+1
-      indicator.set_filter(n_indicator, {name=item_to_place.name, quality=quality or "normal", comparator="="})
-    end
-    for cat,_ in pairs(machine_proto.crafting_categories) do
-      if not crafting_time_scale[cat] then
-        crafting_time_scale[cat] = absolute_time_scale / machine_proto.get_crafting_speed(quality)
-        category_to_machine[cat] = (item_to_place or {}).name
-        category_to_machine_proto[cat] = machine_proto
-      end
-    end
-  end
-
-  local module_category_to_module = {}
-
-  -- FLAG_DENSE: use a dense flags-matrix layout.  Better for modules.
-  -- Can't support multiply or quality.  All entries must be 1
-  local FLAG_DENSE        = 1
-
-  -- FLAG_MULTIPLY: multiply this entry by the input quantity
-  local FLAG_MULTIPLY     = 2
-
-  -- FLAG_NOQUAL: this output's quality isn't based on the input quality
-  local FLAG_NOQUAL       = 4
-  if not g_have_quality then FLAG_NOQUAL = 0 end
-
-  -- FLAG_NORMAL_INPUT: this row is only valid if the input has normal quality (e.g. a fluid)
-  local FLAG_NORMAL_INPUT = 8
-  if not g_have_quality then FLAG_NORMAL_INPUT = 0 end
-
-  -- FLAG_RED: output this info on the red wire (TODO)
-  -- FLAG_GREEN: output this info on the green wire (TODO)
-  local FLAG_RED,FLAG_GREEN = 16,32
-
-  -- set_combo(outsig,outval,flags)
-  -- This function creates a matrix entry for [current row] -> {outsig, outval}
-  -- There may be multiple matrices, with properties dictated by the flags
-  local sigcombo_by_flags = nil
-  local function set_combo(outsig,outval,flags)
-    if not sigcombo_by_flags[flags] then
-      sigcombo_by_flags[flags] = {}
-    end
-    table.insert(sigcombo_by_flags[flags], band(flags,FLAG_DENSE)==0 and {outsig,outval} or outsig)
-  end
-
-  local item_to_flags_ptr = {}
-  
-  -- commit_combo(sig)
-  -- This function loads the current matrix rows into the matrices,
-  -- where the row is indexed by `sig`.  It also inserts the signal
-  -- into valid, or into valid_norm, as appropriate
-  local valid,nvalid = {},0
-  local matrices_by_flags = {}
-  local valid_at_all_qualities = {}
-
-  local function append_to_matrices(asig, flags, row)
-    -- log(serpent.line(asig) .. " ==> " .. serpent.line(row))
-    if band(flags,FLAG_NORMAL_INPUT)==0 then
-        valid_at_all_qualities[asig.type..":"..asig.name] = true
-    end
-    if matrices_by_flags[flags] then
-      table.insert(matrices_by_flags[flags], {asig,row})
-    else
-      matrices_by_flags[flags] = {{asig,row}}
-    end
-  end
-
-  local function commit_combo(asig)
-    local have_any = false
-    for flags,combo in pairs(sigcombo_by_flags) do
-      have_any = true
-      append_to_matrices(asig, flags, combo)
-    end
-    if have_any then
-      nvalid = nvalid+1
-      valid[nvalid] = {asig,1}
-    end
-  end
-
-  local backup_sigcombo_by_flags
-  local function temporary_sigcombos(extra_flags)
-    -- Make a temporary copy of `sigcombo_by_flags`
-    -- For each entry, merge its flags with extra_flags
-    backup_sigcombo_by_flags = sigcombo_by_flags
-    sigcombo_by_flags = table.deepcopy(backup_sigcombo_by_flags)
-    if extra_flags ~= 0 then
-      for flags,_ in pairs(backup_sigcombo_by_flags) do
-        if bor(flags,extra_flags) == flags then
-          -- pass
-        elseif not sigcombo_by_flags[bor(flags,extra_flags)] then
-          sigcombo_by_flags[bor(flags,extra_flags)] = sigcombo_by_flags[flags]
-          sigcombo_by_flags[flags] = nil
-        else
-          local row = sigcombo_by_flags[bor(flags,extra_flags)]
-          for _,r in ipairs(sigcombo_by_flags[flags]) do
-            table.insert(row,r)
-          end
-          sigcombo_by_flags[flags] = nil
-        end
-      end
-    end
-  end
-
-  -- iterate through the recipes in the given categories
-  for category,_ in pairs(crafting_time_scale) do
-    local machine_proto=category_to_machine_proto[category]
-    local machine_has_modules = machine_proto.module_inventory_size and (machine_proto.module_inventory_size>0)
-    for name,recipe in pairs(prototypes.get_recipe_filtered{{filter="category",category=category}}) do
-      local suitable = string.find(name,"^parameter%-%d$") == nil
-      if suitable then
-        -- TODO: deal with probabilities?
-        sigcombo_by_flags = {}
-        local sig = {type="recipe",name=recipe.name}
-        local scaled_time = ceil(recipe.energy * crafting_time_scale[recipe.category])
-
-        local ingredients=recipe.ingredients
-
-        -- Are all ingredients fluid?  If so, then the recipe does not accept quality
-        local all_fluid=true
-        for idx=1,#ingredients do
-          if ingredients[idx].type == "item" then all_fluid = false end
-        end
-        local flag_all_fluid = 0
-        if all_fluid then flag_all_fluid = FLAG_NORMAL_INPUT end
-
-        if output_recipe_ingredients then
-          for idx=1,#ingredients do
-            local ingredient=ingredients[idx]
-            local fluid = (ingredient.type == "fluid") and FLAG_NOQUAL or flag_all_fluid
-            set_combo({type=ingredient.type, name=ingredient.name},ingredient.amount, FLAG_MULTIPLY+fluid)
-          end
-        end
-
-        if output_crafting_time then
-          set_combo(output_crafting_time,scaled_time,FLAG_MULTIPLY + FLAG_NOQUAL + flag_all_fluid)
-        end
-
-        if output_recipe then
-          set_combo(sig,1,FLAG_MULTIPLY + flag_all_fluid)
-        end
-
-        local products = recipe.products
-        if output_recipe_products then
-          for idx=1,#products do
-            local product=products[idx]
-            -- Default recipes, for specifying as an item instead of as a recipe
-            local product_str = product.type .. ":" .. product.name
-            local amt = product.amount or (product.amount_min + product.amount_max)/2
-            local fluid = (product.type == "fluid") and FLAG_NOQUAL or flag_all_fluid
-            set_combo({type=product.type, name=product.name},-amt,FLAG_MULTIPLY+fluid)
-          end
-        end
-
-        -- OK, what about module effects and other flags
-        if output_crafting_machine and category_to_machine[category] then
-          set_combo({type="item",name=category_to_machine[category]}, 1, FLAG_NOQUAL + flag_all_fluid)
-        end
-
-        -- what modules are allowed?
-        if output_allowed_modules and machine_has_modules then
-          for idx=1,#module_table do
-            local module_name = module_table[idx]
-            local module = prototypes.item[module_name]
-            local cat = module.category
-            local ok = ((not recipe.allowed_module_categories)
-                          or recipe.allowed_module_categories[cat])
-            ok = ok and ((not machine_proto.allowed_module_categories)
-                          or machine_proto.allowed_module_categories[cat])
-            if ok and recipe.allowed_effects then
-              for eff,_value in pairs(module.module_effects) do
-                if not recipe.allowed_effects[eff] then
-                  ok = false
-                  break
-                end
-              end
-            end
-            if ok then
-              set_combo({type="item",name=module.name}, 1, FLAG_DENSE + FLAG_NOQUAL + flag_all_fluid)
-            end
-          end
-        end
-
-        if input_recipe then
-          commit_combo(sig)
-        end
-
-        if input_recipe_ingredients then
-          for idx=1,#ingredients do
-            local ingredient=ingredients[idx]
-            local component_sig = {type=ingredient.type, name=ingredient.name}
-            local ingredient_str = ingredient.type .. ":" .. ingredient.name
-            local fluid = (ingredient.type == "fluid") and FLAG_NORMAL_INPUT or flag_all_fluid
-            if not item_to_flags_ptr[ingredient_str] then
-              -- not seen before
-              if output_all_recipes then
-                temporary_sigcombos(fluid) -- unlink from the recipe copy
-                if sigcombo_by_flags[fluid] then
-                  table.insert(sigcombo_by_flags[fluid],{sig,1})
-                else
-                  sigcombo_by_flags[fluid] = {{sig,1}}
-                end
-              end
-              item_to_flags_ptr[ingredient_str] = sigcombo_by_flags
-              commit_combo(component_sig)
-              if output_all_recipes then sigcombo_by_flags = backup_sigcombo_by_flags end
-            elseif output_all_recipes then
-              if item_to_flags_ptr[ingredient_str][fluid] then
-                table.insert(item_to_flags_ptr[ingredient_str][fluid],{sig,1})
-              else
-                local tmp = {{sig,1}}
-                item_to_flags_ptr[ingredient_str][fluid] = tmp
-                append_to_matrices(component_sig,fluid,tmp)
-              end
-            end
-          end
-        end
-
-        if input_recipe_products then
-          for idx=1,#products do
-            local product=products[idx]
-            local component_sig = {type=product.type, name=product.name}
-            local product_str = product.type .. ":" .. product.name
-            local fluid = (product.type == "fluid") and FLAG_NORMAL_INPUT or flag_all_fluid
-            if not item_to_flags_ptr[product_str] then
-              -- not seen before
-              if output_all_recipes then
-                temporary_sigcombos(fluid) -- unlink from the recipe copy
-                sigcombo_by_flags = table.deepcopy(sigcombo_by_flags)
-                if sigcombo_by_flags[fluid] then
-                  table.insert(sigcombo_by_flags[fluid],{sig,1})
-                else
-                  sigcombo_by_flags[fluid] = {{sig,1}}
-                end
-              end
-              item_to_flags_ptr[product_str] = sigcombo_by_flags
-              commit_combo(component_sig)
-              if output_all_recipes then sigcombo_by_flags = backup_sigcombo_by_flags end
-            elseif output_all_recipes then
-              if item_to_flags_ptr[product_str][fluid] then
-                table.insert(item_to_flags_ptr[product_str][fluid],{sig,1})
-              else
-                local tmp = {{sig,1}}
-                item_to_flags_ptr[product_str][fluid] = tmp
-                append_to_matrices(component_sig,fluid,tmp)
-              end
-            end
-          end
-        end
-      end
-    end
-  end
+  -- Collate the matrix into a dense form
+  local matrices_by_flags, valid, valid_at_all_qualities = matrix:collate()
 
   -- Extend out to latency 6.
   -- Stage 1: input buffer.  Connect to entity's inputs
   local input_buffer = builder:arithmetic{L=EACH,op="+",R=0,description="ri.input_buffer"}
   input_buffer.get_wire_connector(IGREEN,true).connect_to(entity.get_wire_connector(IGREEN,true))
   input_buffer.get_wire_connector(IRED,  true).connect_to(entity.get_wire_connector(IRED,  true))
-  
+
   local end_of_input_stage
   local quality_buffer
   local end_of_input_stage_normal_only
-  if g_have_quality then
+  if HAVE_QUALITY then
     local valid2,nvalid2 = {},0
     local literal_quality = {}
     local decisions_getqual={}
@@ -889,7 +605,7 @@ local function build_recipe_info_combinator(args)
   for flags,matrix in pairs(matrices_by_flags) do
     local input=end_of_input_stage
     -- log("Matrix, flags="..tostring(flags)..":\n"..serpent.line(matrix))
-    if g_have_quality and band(flags,FLAG_NORMAL_INPUT)>0 then
+    if HAVE_QUALITY and band(flags,FLAG_NORMAL_INPUT)>0 then
       input=end_of_input_stage_normal_only
     end
     local use_qual = quality_buffer
@@ -909,6 +625,182 @@ local function build_recipe_info_combinator(args)
       -- game.print("Build sparse matrix with "..tonumber(#matrix).." rows with flags="..tonumber(flags))
     end
   end
+end
+
+local function build_recipe_info_combinator(args)
+  -- parse args
+  local entity                    = args.entity
+  local machines                  = args.machines or {}
+  local output_allowed_modules    = args.output_allowed_modules
+  local output_recipe_ingredients = args.output_recipe_ingredients
+  local output_recipe_products    = args.output_recipe_products
+  local output_recipe             = args.output_recipe
+  local input_recipe_products     = args.input_recipe_products
+  local input_recipe_ingredients  = args.input_recipe_ingredients
+  local input_recipe              = args.input_recipe
+  local output_crafting_machine   = args.output_crafting_machine
+  local one_module_per_category   = args.one_module_per_category
+  local output_crafting_time      = args.output_crafting_time
+  local output_all_recipes        = args.output_all_recipes -- TODO
+  -- TODO: more!  Scales, red/green, etc
+
+  local module_table = output_allowed_modules and (
+    (one_module_per_category and g_modules_per_category) or g_all_modules
+  ) or {}
+
+  destroy_components(entity)
+  local matrix = matrix_builder.MatrixBuilder:new()
+
+  -- Set the entity's control info
+  local behavior = entity.get_or_create_control_behavior()
+  behavior.parameters = {first_constant=0, operation="+", second_constant=0, output_signal=nil}
+
+  local indicator = entity.surface.create_entity{
+      name="recipe-combinator-component-indicator-inserter",
+      position=entity.position, entity=entity.force
+  }
+  indicator.inserter_filter_mode = "whitelist"
+  indicator.use_filters = true
+  local n_indicator = 0
+
+  local crafting_time_scale = {}
+  local absolute_time_scale = 60 -- i.e. in ticks
+  local category_to_machine = {}
+  local category_to_machine_proto = {}
+
+  -- parse out the machines into speeds and categories
+  for _,machine in ipairs(machines) do
+    local quality = nil -- TODO
+    local machine_proto = prototypes.entity[machine]
+    local item_to_place = machine_proto.items_to_place_this[1]
+    if item_to_place and n_indicator < 4 then
+      -- add it to the indicator inserter
+      n_indicator=n_indicator+1
+      indicator.set_filter(n_indicator, {name=item_to_place.name, quality=quality or "normal", comparator="="})
+    end
+    for cat,_ in pairs(machine_proto.crafting_categories) do
+      if not crafting_time_scale[cat] then
+        crafting_time_scale[cat] = absolute_time_scale / machine_proto.get_crafting_speed(quality)
+        category_to_machine[cat] = (item_to_place or {}).name
+        category_to_machine_proto[cat] = machine_proto
+      end
+    end
+  end
+
+  -- iterate through the recipes in the given categories
+  for category,_ in pairs(crafting_time_scale) do
+    local machine_proto=category_to_machine_proto[category]
+    local machine_has_modules = machine_proto.module_inventory_size and (machine_proto.module_inventory_size>0)
+    for name,recipe in pairs(prototypes.get_recipe_filtered{{filter="category",category=category}}) do
+      local suitable = string.find(name,"^parameter%-%d$") == nil
+      if suitable then
+        local sig = {type="recipe",name=recipe.name}
+        local row = matrix:create_or_add_row(sig, not input_recip)
+        local scaled_time = ceil(recipe.energy * crafting_time_scale[recipe.category])
+        local ingredients = recipe.ingredients
+
+        -- Are all ingredients fluid?  If so, then the recipe does not accept quality
+        local all_fluid=true
+        for idx=1,#ingredients do
+          if ingredients[idx].type == "item" then all_fluid = false end
+        end
+        local flag_all_fluid = 0
+        if all_fluid then flag_all_fluid = FLAG_NORMAL_INPUT end
+
+        if output_recipe_ingredients then
+          for idx=1,#ingredients do
+            local ingredient=ingredients[idx]
+            local fluid = (ingredient.type == "fluid") and FLAG_NOQUAL or flag_all_fluid
+            row:set_entry({type=ingredient.type, name=ingredient.name},ingredient.amount, FLAG_MULTIPLY+fluid)
+          end
+        end
+
+        if output_crafting_time then
+          row:set_entry(output_crafting_time,scaled_time,FLAG_MULTIPLY + FLAG_NOQUAL + flag_all_fluid)
+        end
+
+        if output_recipe then
+          row:set_entry(sig,1,FLAG_MULTIPLY + flag_all_fluid)
+        end
+
+        local products = recipe.products
+        if output_recipe_products then
+          for idx=1,#products do
+            local product=products[idx]
+            -- Default recipes, for specifying as an item instead of as a recipe
+            local product_str = product.type .. ":" .. product.name
+            local amt = product.amount or (product.amount_min + product.amount_max)/2
+            local fluid = (product.type == "fluid") and FLAG_NOQUAL or flag_all_fluid
+            row:set_entry({type=product.type, name=product.name},-amt,FLAG_MULTIPLY+fluid)
+          end
+        end
+
+        -- OK, what about module effects and other flags
+        if output_crafting_machine and category_to_machine[category] then
+          row:set_entry({type="item",name=category_to_machine[category]}, 1, FLAG_NOQUAL + flag_all_fluid)
+        end
+
+        -- what modules are allowed?
+        if output_allowed_modules and machine_has_modules then
+          for idx=1,#module_table do
+            local module_name = module_table[idx]
+            local module = prototypes.item[module_name]
+            local cat = module.category
+            local ok = ((not recipe.allowed_module_categories)
+                          or recipe.allowed_module_categories[cat])
+            ok = ok and ((not machine_proto.allowed_module_categories)
+                          or machine_proto.allowed_module_categories[cat])
+            if ok and recipe.allowed_effects then
+              for eff,_value in pairs(module.module_effects) do
+                if not recipe.allowed_effects[eff] then
+                  ok = false
+                  break
+                end
+              end
+            end
+            if ok then
+              row:set_entry({type="item",name=module.name}, 1, FLAG_DENSE + FLAG_NOQUAL + flag_all_fluid)
+            end
+          end
+        end
+
+        if input_recipe_ingredients then
+          for idx=1,#ingredients do
+            local component=ingredients[idx]
+            local component_sig = {type=component.type, name=component.name}
+            local fluid = (component_sig.type == "fluid") and FLAG_NORMAL_INPUT or flag_all_fluid
+            local row2 = matrix:create_or_add_row(component_sig)
+            if row2:is_empty() then
+              -- not seen before, add recipe info
+              row2:add_copy_with_flag_change(row,fluid)
+            end
+            if output_all_recipes then
+              row2:set_entry(sig,1,fluid,true)
+            end
+          end
+        end
+
+        if input_recipe_products then
+          for idx=1,#products do
+            local component=products[idx]
+            local component_sig = {type=component.type, name=component.name}
+            local fluid = (component_sig.type == "fluid") and FLAG_NORMAL_INPUT or flag_all_fluid
+            local row2 = matrix:create_or_add_row(component_sig)
+            if row2:is_empty() then
+              -- not seen before, add recipe info
+              row2:add_copy_with_flag_change(row,fluid)
+            end
+            if output_all_recipes then
+              row2:set_entry(sig,1,fluid,true)
+            end
+          end
+        end
+      end
+    end
+  end
+
+  -- go go go!
+  build_matrix_combinator(entity, matrix)
 end
 
 local DEFAULT_ROLLUP = {
