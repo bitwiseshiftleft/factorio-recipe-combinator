@@ -155,7 +155,7 @@ handlers.check = function(ev)
   rebuild_active_combinator(ev.player_index)
 end
 
-local function checkbox(box, load)
+local function checkbox(box, load, enabled)
   local box2 = util.merge{{
     type = "checkbox",
     style = (box.type == "checkbox") and "checkbox" or nil,
@@ -183,13 +183,13 @@ end
 
 local function checkbox_row(args)
   local boxes = {}
-  local enabled = nil
+  local enabled = args.zone_enabled
   local load = args.load
   for _,box in ipairs(args.row or {}) do
     if type(box) == string then
       table.insert(boxes,{type="label", caption=box,enabled=enabled})
     else
-      box2 = checkbox(box,load)
+      box2 = checkbox(box,load,enabled)
       table.insert(boxes,box2)
       if enabled == nil and not args.all_enabled then
         enabled = (box2.enabled == nil or box2.enabled) and box2.state
@@ -278,6 +278,18 @@ local function open(player_index, entity)
   for _,machine in ipairs(load.machines or {}) do append_machine(machine) end
   append_machine(nil)
 
+  local function chk(group, ty)
+    -- miniature checkbox builder
+    return { name=group .. "_" .. ty, 
+      caption = { "recipe-combinator-gui." .. ty .. "_checkbox" },
+      tooltip = { "recipe-combinator-gui." .. ty .. "_tooltip" },
+      style = "recipe-combinator_mini_checkbox"
+    }
+  end
+
+  local en_one,en_all = load.enable_one or false, load.enable_all or false
+  if not en_one and not en_all then en_one = true end
+
   local main_frame = {
     name=prefix.."combi_config", type="frame", style="inside_shallow_frame_with_padding", direction="vertical",
     children = {
@@ -286,7 +298,7 @@ local function open(player_index, entity)
         tooltip("which_machines")
       }},
       machines_outer,
-      {type="flow", children={
+      {type="flow", style="recipe-combinator_checkbox_row", children={
         checkbox({name="include_disabled"}),
         checkbox({name="include_hidden"})
       }},
@@ -302,54 +314,81 @@ local function open(player_index, entity)
 
       {type="line", style="recipe-combinator_section_divider_line"},
       {type="flow", style="recipe-combinator_label_toolip", children={
-        {type="label", caption={"recipe-combinator-gui.label_one"}, style="bold_label"},
-        tooltip("section-one")
+        {type="radiobutton",
+          caption={"recipe-combinator-gui.label_one"},
+          style="recipe-combinator_header_radio",
+          state=en_one},
+        tooltip("section_one")
       }},
-      checkbox_row{row={
-        { name="show_recipe", style=checkbox_header },
-        stretch,
-        { name="show_recipe_neg", caption = { "recipe-combinator-gui.negate_checkbox" } },
-        { name="show_recipe_ti",  caption = { "recipe-combinator-gui.times_input_checkbox" } }
-      }, load=load},
-      checkbox_row{row={
-        { name="show_ingredients", style=checkbox_header },
-        stretch,
-        { name="show_ingredients_neg", caption = { "recipe-combinator-gui.negate_checkbox" }},
-        { name="show_ingredients_ti",  caption = { "recipe-combinator-gui.times_input_checkbox" } }
-      }, load=load},
-      checkbox_row{row={
-        { name="show_products", style=checkbox_header },
-        stretch,
-        { name="show_products_neg", caption = { "recipe-combinator-gui.negate_checkbox" } },
-        { name="show_products_ti",  caption = { "recipe-combinator-gui.times_input_checkbox" } }
-      }, load=load},
-      checkbox_row{name="show_time_pane", row={
-        { name="show_time", style=checkbox_header },
-        { name="show_time_signal", type = "choose-elem-button", style="recipe-combinator_signal_button", elem_type="signal" },
-        stretch,
-        { name="show_time_neg", caption = { "recipe-combinator-gui.negate_checkbox" } },
-        { name="show_time_ti",  caption = { "recipe-combinator-gui.times_input_checkbox" } }
-      }, load=load},
-      checkbox_row{row={
-        { name="show_modules", style=checkbox_header },
-        stretch,
-        { name="show_modules_opc", type="radiobutton", style="radiobutton" },
-        { name="show_modules_all",type="radiobutton", style="radiobutton" }
-      }, load=load},
-      checkbox_row{row={
-        -- TODO: options for only the first, etc?
-        { name="show_machines", style=checkbox_header }
-      }, load=load},
+      {type="flow",direction="vertical",name=prefix.."subpane_one",
+        enabled=en_one, children={
+        checkbox_row{row={
+          { name="show_recipe", style=checkbox_header },
+          stretch,
+          chk("show_recipe","neg"),
+          chk("show_recipe","ti"),
+          chk("show_recipe","red"),
+          chk("show_recipe","green")
+        }, load=load},
+        checkbox_row{row={
+          { name="show_ingredients", style=checkbox_header },
+          stretch,
+          chk("show_ingredients","neg"),
+          chk("show_ingredients","ti"),
+          chk("show_ingredients","red"),
+          chk("show_ingredients","green")
+        }, load=load},
+        checkbox_row{row={
+          { name="show_products", style=checkbox_header },
+          stretch,
+          chk("show_products","neg"),
+          chk("show_products","ti"),
+          chk("show_products","red"),
+          chk("show_products","green")
+        }, load=load},
+        checkbox_row{name="show_time_pane", row={
+          { name="show_time", style=checkbox_header },
+          { name="show_time_signal", type = "choose-elem-button", style="recipe-combinator_signal_button", elem_type="signal" },
+          stretch,
+          chk("show_time","neg"),
+          chk("show_time","ti"),
+          chk("show_time","red"),
+          chk("show_time","green")
+        }, load=load},
+        checkbox_row{row={
+          { name="show_modules", style=checkbox_header },
+          stretch,
+          { name="show_modules_opc", type="radiobutton", style="radiobutton" },
+          { name="show_modules_all",type="radiobutton", style="radiobutton" },
+          chk("show_modules","red"),
+          chk("show_modules","green")
+        }, load=load},
+        checkbox_row{row={
+          -- TODO: options for only the first, etc?
+          { name="show_machines", style=checkbox_header },
+          stretch,
+          chk("show_machines","red"),
+          chk("show_machines","green")
+        }, load=load}
+      }},
 
       {type="line", style="recipe-combinator_section_divider_line"},
       {type="flow", style="recipe-combinator_label_toolip", children={
-        {type="label", caption={"recipe-combinator-gui.label_all"}, style="bold_label"}
-        -- tooltip("section-all")
+        {type="radiobutton", caption={"recipe-combinator-gui.label_all"},
+          style="recipe-combinator_header_radio",
+          state=en_all},
+        tooltip("section-all")
       }},
-      checkbox_row{row={
-        { name="show_all_recipes", style=checkbox_header },
-        tooltip("show-all-recipes")
-      }, load=load}
+      {type="flow",direction="vertical",name=prefix.."subpane_all",
+        enabled=en_all, children={
+        checkbox_row{row={
+          { name="show_all_recipes", style=checkbox_header },
+          -- tooltip("show_all_recipes"),
+          stretch,
+          chk("show_all_recipes","red"),
+          chk("show_all_recipes","green")
+        }, load=load}
+      }}
     }
   }
 
@@ -362,7 +401,9 @@ local function open(player_index, entity)
   }})
 
   -- the signal states can't be restored by the script
-  local show_time_sig = main_window[prefix.."combi_config"][prefix.."show_time_pane"][prefix.."show_time_signal"]
+  local show_time_sig = main_window
+    [prefix.."combi_config"][prefix.."subpane_one"]
+    [prefix.."show_time_pane"][prefix.."show_time_signal"]
   local sts_name = "show_time_signal"
   if show_time_sig and sts_name and load and load[sts_name] then
     show_time_sig.elem_value = load[sts_name]

@@ -1,15 +1,16 @@
 # TODO
 
 * Quality indicator: output a signal "Q" or so whose quality is set to the recipe quality, for downstream use
-* Undo / redo support
+
 * Update on mod config reload
 * Update on techs researched ("if unlocked" and if tech unlocks recipes only)
 * Graceful upgrade with "defunct" combinators
+
 * Copy / paste items support
+* Undo / redo support
+
 * Spoilage support
 * Make "show all recipes" exclusive with other options
-* Multiply and negate support
-* Separate red/green output support??
 * Right-alias support
 * Test test test
 * Test again with no quality

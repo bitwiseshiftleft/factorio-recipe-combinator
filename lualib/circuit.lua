@@ -597,10 +597,14 @@ local function build_matrix_combinator(entity, matrix)
   end
 
   -- widget to connect combi's output to the main entity
-  local function connect_output(combi)
+  local function connect_output(combi,flags)
     if not combi then return end
-    combi.get_wire_connector(OGREEN,true).connect_to(entity.get_wire_connector(OGREEN,true))
-    combi.get_wire_connector(ORED,true).  connect_to(entity.get_wire_connector(ORED,  true))
+    if band(flags,FLAG_RED)>0 then
+      combi.get_wire_connector(ORED,true).  connect_to(entity.get_wire_connector(ORED,  true))
+    end
+    if band(flags,FLAG_GREEN)>0 then
+      combi.get_wire_connector(OGREEN,true).connect_to(entity.get_wire_connector(OGREEN,true))
+    end
   end
 
   for flags,matrix in pairs(matrices_by_flags) do
@@ -616,13 +620,13 @@ local function build_matrix_combinator(entity, matrix)
     if band(flags,FLAG_DENSE)>0 then
       -- TODO: add right-aliases to flag_matrix
       -- NB: doesn't support quality
-      connect_output(build_flag_matrix(builder,input,matrix,"ri.matrix.flags"..tonumber(flags).."."))
+      connect_output(build_flag_matrix(builder,input,matrix,"ri.matrix.flags"..tonumber(flags).."."),flags)
       -- game.print("Build flag matrix with "..tonumber(#matrix).." rows with flags="..tonumber(flags))
     else 
       connect_output(build_sparse_matrix{
         builder=builder,input=input,rows=matrix,prefix="ri.matrix.flags"..tonumber(flags)..".",
         multiply_by_input=band(flags,FLAG_MULTIPLY)>0,use_qual=use_qual
-      })
+      },flags)
       -- game.print("Build sparse matrix with "..tonumber(#matrix).." rows with flags="..tonumber(flags))
     end
   end
@@ -855,11 +859,26 @@ local DEFAULT_ROLLUP = {
   show_modules_opc = true,
   show_modules_all = false,
   show_machines = false,
-  output_all_recipes = false
+  output_all_recipes = false,
+
+  show_modules_red = true,
+  show_modules_green = true,
+  show_ingredients_red = true,
+  show_ingredients_green = true,
+  show_products_red = true,
+  show_products_green = true,
+  show_recipe_red = true,
+  show_recipe_green = true,
+  show_all_recipes_red = true,
+  show_all_recipes_green = true,
+  show_machines_red = true,
+  show_machines_green = true,
+  show_time_red = true,
+  show_time_green = true
 }
 
 local function rollup_flags(enable,ti,neg,red,green)
-  return enable and (
+  return enable and (red or green) and (
       (ti and FLAG_MULTIPLY or 0)
     + (neg and FLAG_NEGATE or 0)
     + (red and FLAG_RED or 0)

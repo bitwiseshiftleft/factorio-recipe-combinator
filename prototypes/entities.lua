@@ -77,6 +77,7 @@ local indicator_inserter = {
 
 local recipe_combinator = util.merge{data.raw["arithmetic-combinator"]["arithmetic-combinator"],{
     name = "recipe-combinator-main",
+    factoriopedia_description = {"factoriopedia-description.recipe-combinator-main"},
     icons = {{
         icon = "__base__/graphics/icons/arithmetic-combinator.png",
         tint = {r=1,g=0.4,b=0.3,a=1}

@@ -16,8 +16,8 @@ styles["recipe-combinator_indented_checkbox_row"] = {
   
 styles["recipe-combinator_checkbox_row"] = {
     type = "horizontal_flow_style",
-    left_padding = 8,
-    right_padding = 8,
+    left_padding = 12,
+    right_padding = 12,
     vertical_align = "center"
 }
 
@@ -31,10 +31,13 @@ styles["recipe-combinator_label_toolip"] = {
   
 styles["recipe-combinator_unpadded_horizontal_flow"] = {
     type = "horizontal_flow_style",
-    top_margin = -4
+    top_margin = -12,
+    bottom_margin = 8
 }
 styles["recipe-combinator_unpadded_horizontal_flow_first"] = {
-    type = "horizontal_flow_style"
+    type = "horizontal_flow_style",
+    bottom_margin = 8,
+    top_margin = 4
 }
   
 styles["recipe-combinator_tooltip_sprite"] = {
@@ -56,6 +59,13 @@ styles["recipe-combinator_checkbox_header"] = {
     parent = "checkbox"
 }
 
+styles["recipe-combinator_mini_checkbox"] = {
+    type = "checkbox_style",
+    parent = "checkbox",
+    margin_left = 16,
+    text_padding = 0
+}
+
 styles["recipe-combinator_stretch"] = {
     type = "empty_widget_style",
     horizontally_stretchable = "on"
@@ -73,4 +83,11 @@ styles["recipe-combinator_subheader_caption_radio"] = {
   parent = "caption_radiobutton",
   left_margin = 8,
   bottom_margin = 4
+}
+
+styles["recipe-combinator_header_radio"] = {
+  type = "radiobutton_style",
+  parent = "caption_radiobutton",
+  font = "default-bold",
+  left_margin = 4
 }
