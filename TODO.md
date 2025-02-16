@@ -2,18 +2,22 @@
 
 * Quality indicator: output a signal "Q" or so whose quality is set to the recipe quality, for downstream use
 * Undo / redo support
-* Update on state reload
-* Update on techs researched
-* Update on py TURD selected or similar??
+* Update on mod config reload
+* Update on techs researched ("if unlocked" and if tech unlocks recipes only)
+* Graceful upgrade with "defunct" combinators
 * Copy / paste items support
 * Spoilage support
 * Make "show all recipes" exclusive with other options
 * Multiply and negate support
 * Separate red/green output support??
 * Right-alias support
-* Limit to unlocked recipes only
 * Test test test
 * Test again with no quality
+
+Py support
+* Test in py
+* Make a "commit" button for py, for perf reasons
+* Update on py TURD selected or similar
 
 Speculative future features
 * Deal with probabilities

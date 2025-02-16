@@ -40,6 +40,7 @@ local FLAG_RED          = matrix_builder.FLAG_RED
 local FLAG_NORMAL_INPUT = matrix_builder.FLAG_NORMAL_INPUT
 local FLAG_MULTIPLY     = matrix_builder.FLAG_MULTIPLY
 local FLAG_NOQUAL       = matrix_builder.FLAG_NOQUAL
+local FLAG_NEGATE       = matrix_builder.FLAG_NEGATE
 
 -- When used as a builder interface, takes input from itself
 local ITSELF = "__ITSELF__"
@@ -630,18 +631,22 @@ end
 local function build_recipe_info_combinator(args)
   -- parse args
   local entity                    = args.entity
+  local force                     = entity.force
   local machines                  = args.machines or {}
+
   local output_allowed_modules    = args.output_allowed_modules
   local output_recipe_ingredients = args.output_recipe_ingredients
   local output_recipe_products    = args.output_recipe_products
   local output_recipe             = args.output_recipe
+  local output_crafting_time      = args.output_crafting_time
+  local output_crafting_time_sig  = args.output_crafting_time_sig
+  local output_all_recipes        = args.output_all_recipes
+  local output_crafting_machine   = args.output_crafting_machine
+  local one_module_per_category   = args.one_module_per_category
+
   local input_recipe_products     = args.input_recipe_products
   local input_recipe_ingredients  = args.input_recipe_ingredients
   local input_recipe              = args.input_recipe
-  local output_crafting_machine   = args.output_crafting_machine
-  local one_module_per_category   = args.one_module_per_category
-  local output_crafting_time      = args.output_crafting_time
-  local output_all_recipes        = args.output_all_recipes -- TODO
   local include_hidden            = args.include_hidden
   local include_disabled          = args.include_disabled
   -- TODO: more!  Scales, red/green, etc
@@ -689,7 +694,7 @@ local function build_recipe_info_combinator(args)
     end
   end
 
-  local function index_by_item(row,item,flag_all_fluid)
+  local function index_by_item(row,item,flag_all_fluid,output_all_recipes)
     -- Add a copy of row, but indexed by the item instead
     local item_sig = {type=item.type, name=item.name}
     local fluid = (item.type == "fluid") and FLAG_NORMAL_INPUT or flag_all_fluid
@@ -719,7 +724,7 @@ local function build_recipe_info_combinator(args)
       row2:add_copy_with_flag_change(row,FLAG_NORMAL_INPUT,-1)
     end
     if output_all_recipes then
-      row2:set_entry(row.signal,1,fluid,true)
+      row2:set_entry(row.signal,1,bor(output_all_recipes,fluid),true)
     end
   end
 
@@ -730,7 +735,7 @@ local function build_recipe_info_combinator(args)
     for name,recipe in pairs(prototypes.get_recipe_filtered{{filter="category",category=category}}) do
       local suitable =
         string.find(name,"^parameter%-%d$") == nil
-        and (include_disabled or recipe.enabled)
+        and (include_disabled or force.recipes[name])
         and (include_hidden or not recipe.hidden)
       if suitable then
         local sig = {type="recipe",name=recipe.name}
@@ -750,16 +755,18 @@ local function build_recipe_info_combinator(args)
           for idx=1,#ingredients do
             local ingredient=ingredients[idx]
             local fluid = (ingredient.type == "fluid") and FLAG_NOQUAL or flag_all_fluid
-            row:set_entry({type=ingredient.type, name=ingredient.name},ingredient.amount, FLAG_MULTIPLY+fluid)
+            row:set_entry({type=ingredient.type, name=ingredient.name},ingredient.amount,
+              bor(output_recipe_ingredients,fluid))
           end
         end
 
         if output_crafting_time then
-          row:set_entry(output_crafting_time,scaled_time,FLAG_MULTIPLY + FLAG_NOQUAL + flag_all_fluid)
+          row:set_entry(output_crafting_time_sig,scaled_time,
+            bor(output_crafting_time,FLAG_NOQUAL + flag_all_fluid))
         end
 
         if output_recipe then
-          row:set_entry(sig,1,FLAG_MULTIPLY + flag_all_fluid)
+          row:set_entry(sig,1,bor(output_recipe,flag_all_fluid))
         end
 
         local products = recipe.products
@@ -770,14 +777,15 @@ local function build_recipe_info_combinator(args)
             local product_str = product.type .. ":" .. product.name
             local amt = product.amount or (product.amount_min + product.amount_max)/2
             local fluid = (product.type == "fluid") and FLAG_NOQUAL or flag_all_fluid
-            row:set_entry({type=product.type, name=product.name},-amt,FLAG_MULTIPLY+fluid)
+            row:set_entry({type=product.type, name=product.name},amt,
+              bor(output_recipe_products,fluid))
           end
         end
 
         -- OK, what about module effects and other flags
         if output_crafting_machine and category_to_machine[category] then
           row:set_entry({type="item",name=category_to_machine[category]}, 1,
-            FLAG_DENSE + FLAG_NOQUAL + flag_all_fluid)
+            bor(output_crafting_machine, FLAG_DENSE + FLAG_NOQUAL + flag_all_fluid))
         end
 
         -- what modules are allowed?
@@ -799,19 +807,20 @@ local function build_recipe_info_combinator(args)
               end
             end
             if ok then
-              row:set_entry({type="item",name=module.name}, 1, FLAG_DENSE + FLAG_NOQUAL + flag_all_fluid)
+              row:set_entry({type="item",name=module.name}, 1,
+                bor(output_allowed_modules, FLAG_DENSE + FLAG_NOQUAL + flag_all_fluid))
             end
           end
         end
 
         if input_recipe_ingredients then
           for idx=1,#ingredients do
-            index_by_item(row,ingredients[idx],flag_all_fluid)
+            index_by_item(row,ingredients[idx],flag_all_fluid,output_all_recipes)
           end
         end
         if input_recipe_products then
           for idx=1,#products do
-            index_by_item(row,products[idx],flag_all_fluid)
+            index_by_item(row,products[idx],flag_all_fluid,output_all_recipes)
           end
         end
       end
@@ -837,11 +846,11 @@ local DEFAULT_ROLLUP = {
   show_products_ti = true,
   show_time_signal = {type="virtual",name="signal-T"},
   show_recipe = true,
-  show_recipe_neg = true,
-  show_recipe_ti = true,
+  show_recipe_neg = false,
+  show_recipe_ti = false,
   show_time = false,
   show_time_neg = false,
-  show_time_ti = true,
+  show_time_ti = false,
   show_modules = false,
   show_modules_opc = true,
   show_modules_all = false,
@@ -849,29 +858,55 @@ local DEFAULT_ROLLUP = {
   output_all_recipes = false
 }
 
+local function rollup_flags(enable,ti,neg,red,green)
+  return enable and (
+      (ti and FLAG_MULTIPLY or 0)
+    + (neg and FLAG_NEGATE or 0)
+    + (red and FLAG_RED or 0)
+    + (green and FLAG_GREEN or 0)
+  )
+end
+
 local function rollup_state_to_build_args(entity, rollup)
   -- Turn a rollup state into build args
   -- the rollup state is not hierarchical, and includes state for disabled functions
   -- (eg a signal name for output time, when we aren't outputting time)
-  rollup = rollup or DEFAULT_ROLLUP
+  local ru = rollup or DEFAULT_ROLLUP
   local ret = {
     entity                      = entity,
-    machines                    = rollup.machines,
-    include_disabled            = rollup.include_disabled,
-    include_hidden              = rollup.include_hidden,
+    machines                    = ru.machines,
+    include_disabled            = ru.include_disabled,
+    include_hidden              = ru.include_hidden,
     
-    input_recipe_products       = rollup.input_product,
-    input_recipe_ingredients    = rollup.input_ingredients,
-    input_recipe                = rollup.input_recipe,
+    input_recipe_products       = ru.input_product,
+    input_recipe_ingredients    = ru.input_ingredients,
+    input_recipe                = ru.input_recipe,
 
-    output_allowed_modules      = rollup.show_modules,
-    one_module_per_category     = rollup.show_modules_opc,
-    output_recipe_ingredients   = rollup.show_ingredients,
-    output_recipe_products      = rollup.show_products,
-    output_recipe               = rollup.show_recipe,
-    output_all_recipes          = rollup.show_all_recipes,
-    output_crafting_machine     = rollup.show_machines,
-    output_crafting_time        = rollup.show_time and rollup.show_time_signal
+    one_module_per_category     = ru.show_modules_opc,
+
+    output_allowed_modules      =
+      rollup_flags(ru.show_modules,false,false,
+        rollup.show_modules_red, ru.show_modules_green),
+    output_recipe_ingredients   =
+      rollup_flags(ru.show_ingredients,ru.show_ingredients_ti,ru.show_ingredients_neg,
+        rollup.show_ingredients_red,ru.show_ingredients_green),
+    output_recipe_products      =
+      rollup_flags(ru.show_products,ru.show_products_ti,ru.show_products_neg,
+        rollup.show_products_red, ru.show_products_green),
+    output_recipe               =
+      rollup_flags(ru.show_recipe,ru.show_recipe_ti,ru.show_recipe_neg,
+        rollup.show_recipe_red, ru.show_recipe_green),
+    output_all_recipes          =
+      rollup_flags(ru.show_all_recipes,false,false,
+        rollup.show_all_recipes_red, ru.show_all_recipes_green),
+    output_crafting_machine     =
+      rollup_flags(ru.show_machines,false,false,
+        rollup.show_machines_red, ru.show_machines_green),
+    output_crafting_time        =
+      rollup_flags(ru.show_time,ru.show_time_ti,ru.show_time_neg,
+        ru.show_time_red, ru.show_time_green),
+
+    output_crafting_time_sig    = rollup.show_time and rollup.show_time_signal
   }
   return ret
 end
