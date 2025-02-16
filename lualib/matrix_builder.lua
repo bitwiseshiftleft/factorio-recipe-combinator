@@ -54,24 +54,31 @@ function MatrixBuilderRow:is_empty()
     return next(self.subrows_by_flags) == nil
 end
 
-function MatrixBuilderRow:add_copy_with_flag_change(other,or_flags)
-  -- self += other, but shift entries of other by ORing their flags with or_flags
-  or_flags = or_flags or 0
-  for flags,subrow in pairs(other.subrows_by_flags) do
-    local new_flags = bor(flags,or_flags)
-    if self.subrows_by_flags[new_flags] then
-      local target = self.subrows_by_flags[new_flags]
-      for sigstr,sigvals in pairs(subrow) do
-        if target[sigstr] then
-          target[sigstr][1] = target[sigstr][1] + sigvals[1]
+function MatrixBuilderRow:copy()
+    local ret = MatrixBuilderRow:new(self.signal)
+    ret.subrows_by_flags = table.deepcopy(self.subrows_by_flags)
+    return ret
+end
+
+function MatrixBuilderRow:add_copy_with_flag_change(other,or_flags,multiplier)
+    -- self += multiplier * other, but shift entries of other by ORing their flags with or_flags
+    or_flags = or_flags or 0
+    multiplier = multiplier or 1
+    for flags,subrow in pairs(other.subrows_by_flags) do
+        local new_flags = bor(flags,or_flags)
+        if self.subrows_by_flags[new_flags] then
+            local target = self.subrows_by_flags[new_flags]
+            for sigstr,sigvals in pairs(subrow) do
+                if target[sigstr] then
+                    target[sigstr][2] = target[sigstr][2] + multiplier * sigvals[2]
+                else
+                    target[sigstr] = {sigvals[1],  multiplier * sigvals[2]}
+                end
+            end
         else
-          target[sigstr] = sigvals
+            self.subrows_by_flags[new_flags] = table.deepcopy(subrow)
         end
-      end
-    else
-      self.subrows_by_flags[new_flags] = table.deepcopy(subrow)
     end
-  end
 end
 
 local MatrixBuilder = {}
@@ -108,6 +115,22 @@ function MatrixBuilder:collate()
     local valid = {}
     local added_to_valid = {}
     for rowstr_,row in pairs(self.rows_by_signal) do
+        -- Move dense flags to sparse if they're not 1
+        local rowcopy
+        for flags,subrow in pairs(row.subrows_by_flags) do
+            if band(flags,FLAG_DENSE) > 0 then
+                for colstr,sigval in pairs(subrow) do
+                    if sigval[2] ~= 0 and sigval[2] ~= 1 then
+                        if rowcopy == nil then rowcopy = row:copy() end
+                        rowcopy:set_entry(sigval[1],sigval[2],flags-FLAG_DENSE,true)
+                        rowcopy:set_entry(sigval[1],0,flags)
+                    end
+                end
+            end
+        end
+        if rowcopy then row = rowcopy end
+
+        -- Next, collate the row
         for flags,subrow in pairs(row.subrows_by_flags) do
             local nonempty = false
             local ret_flags

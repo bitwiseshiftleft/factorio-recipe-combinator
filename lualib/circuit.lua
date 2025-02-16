@@ -687,6 +687,40 @@ local function build_recipe_info_combinator(args)
     end
   end
 
+  local function index_by_item(row,item,flag_all_fluid)
+    -- Add a copy of row, but indexed by the item instead
+    local item_sig = {type=item.type, name=item.name}
+    local fluid = (item.type == "fluid") and FLAG_NORMAL_INPUT or flag_all_fluid
+    local row2 = matrix:create_or_add_row(item_sig)
+
+    local has_normal_qual,has_all_qual = false,false
+    for flags,_ in pairs(row2.subrows_by_flags) do
+      if band(flags,FLAG_NORMAL_INPUT) == 0 then
+        has_all_qual = true
+      else
+        has_normal_qual = true
+      end
+    end
+    if not has_all_qual and not has_normal_qual then
+      -- not seen before, add recipe info
+      row2:add_copy_with_flag_change(row,fluid)
+    elseif flag_all_fluid==0 and not has_all_qual then
+      -- seen before but only as a fluid-input recipe
+      -- e.g. steel plates in space age, with foundry taking priority over furnace
+      --   There is a recipe for steel plates (cast from molten iron), but it cannot be qualitied
+      --   If the user enters quality steel plate, they should get a furnace recipe instead
+      
+      -- Add a copy of this row ...
+      row2:add_copy_with_flag_change(row,0)
+
+      -- .. but for the case where the input is normal, subtract this row, canceling it out
+      row2:add_copy_with_flag_change(row,FLAG_NORMAL_INPUT,-1)
+    end
+    if output_all_recipes then
+      row2:set_entry(row.signal,1,fluid,true)
+    end
+  end
+
   -- iterate through the recipes in the given categories
   for category,_ in pairs(crafting_time_scale) do
     local machine_proto=category_to_machine_proto[category]
@@ -737,7 +771,8 @@ local function build_recipe_info_combinator(args)
 
         -- OK, what about module effects and other flags
         if output_crafting_machine and category_to_machine[category] then
-          row:set_entry({type="item",name=category_to_machine[category]}, 1, FLAG_NOQUAL + flag_all_fluid)
+          row:set_entry({type="item",name=category_to_machine[category]}, 1,
+            FLAG_DENSE + FLAG_NOQUAL + flag_all_fluid)
         end
 
         -- what modules are allowed?
@@ -766,33 +801,12 @@ local function build_recipe_info_combinator(args)
 
         if input_recipe_ingredients then
           for idx=1,#ingredients do
-            local component=ingredients[idx]
-            local component_sig = {type=component.type, name=component.name}
-            local fluid = (component_sig.type == "fluid") and FLAG_NORMAL_INPUT or flag_all_fluid
-            local row2 = matrix:create_or_add_row(component_sig)
-            if row2:is_empty() then
-              -- not seen before, add recipe info
-              row2:add_copy_with_flag_change(row,fluid)
-            end
-            if output_all_recipes then
-              row2:set_entry(sig,1,fluid,true)
-            end
+            index_by_item(row,ingredients[idx],flag_all_fluid)
           end
         end
-
         if input_recipe_products then
           for idx=1,#products do
-            local component=products[idx]
-            local component_sig = {type=component.type, name=component.name}
-            local fluid = (component_sig.type == "fluid") and FLAG_NORMAL_INPUT or flag_all_fluid
-            local row2 = matrix:create_or_add_row(component_sig)
-            if row2:is_empty() then
-              -- not seen before, add recipe info
-              row2:add_copy_with_flag_change(row,fluid)
-            end
-            if output_all_recipes then
-              row2:set_entry(sig,1,fluid,true)
-            end
+            index_by_item(row,products[idx],flag_all_fluid)
           end
         end
       end
