@@ -642,6 +642,8 @@ local function build_recipe_info_combinator(args)
   local one_module_per_category   = args.one_module_per_category
   local output_crafting_time      = args.output_crafting_time
   local output_all_recipes        = args.output_all_recipes -- TODO
+  local include_hidden            = args.include_hidden
+  local include_disabled          = args.include_disabled
   -- TODO: more!  Scales, red/green, etc
 
   local module_table = output_allowed_modules and (
@@ -726,7 +728,10 @@ local function build_recipe_info_combinator(args)
     local machine_proto=category_to_machine_proto[category]
     local machine_has_modules = machine_proto.module_inventory_size and (machine_proto.module_inventory_size>0)
     for name,recipe in pairs(prototypes.get_recipe_filtered{{filter="category",category=category}}) do
-      local suitable = string.find(name,"^parameter%-%d$") == nil
+      local suitable =
+        string.find(name,"^parameter%-%d$") == nil
+        and (include_disabled or recipe.enabled)
+        and (include_hidden or not recipe.hidden)
       if suitable then
         local sig = {type="recipe",name=recipe.name}
         local row = matrix:create_or_add_row(sig, not input_recip)
@@ -822,6 +827,8 @@ local DEFAULT_ROLLUP = {
   input_recipe = false,
   input_ingredients = false,
   input_product = true,
+  include_disabled = false,
+  include_hidden = false,
   show_ingredients = true,
   show_ingredients_neg = false,
   show_ingredients_ti = true,
@@ -850,6 +857,8 @@ local function rollup_state_to_build_args(entity, rollup)
   local ret = {
     entity                      = entity,
     machines                    = rollup.machines,
+    include_disabled            = rollup.include_disabled,
+    include_hidden              = rollup.include_hidden,
     
     input_recipe_products       = rollup.input_product,
     input_recipe_ingredients    = rollup.input_ingredients,

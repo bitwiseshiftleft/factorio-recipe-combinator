@@ -108,7 +108,7 @@ handlers.machine_prio = function(ev)
   if lastcol.elem_value then
     -- add a new element
     if #lastrow.children == 10 then
-      _,lastrow = flib_gui.add(rows,{type="flow"})
+      _,lastrow = flib_gui.add(rows,{type="flow",style="recipe-combinator_unpadded_horizontal_flow"})
     end
     flib_gui.add(lastrow,{
         type="choose-elem-button",elem_type="entity",style="recipe-combinator_machine_picker",
@@ -155,6 +155,32 @@ handlers.check = function(ev)
   rebuild_active_combinator(ev.player_index)
 end
 
+local function checkbox(box, load)
+  local box2 = util.merge{{
+    type = "checkbox",
+    style = (box.type == "checkbox") and "checkbox" or nil,
+    state = false,
+    enabled = enabled,
+    handler = {
+      [defines.events.on_gui_checked_state_changed] =
+        (box.type and box.type == "radiobutton" and handlers.radio)
+        or handlers.check,
+        [defines.events.on_gui_elem_changed] =
+          box.type and box.type == "choose-elem-button" and handlers.elem
+    },
+    caption = box.caption or (box.name and {"recipe-combinator-gui." .. box.name})
+  },box}
+  box2.name = box.name and (prefix .. box.name)
+  if load and load[box.name] ~= nil then
+    if box2.type == "checkbox" or box2.type == "radiobutton" then
+      box2.state = load[box.name]
+    -- elseif box2.type == "choose-elem-button" then
+    --   box2.elem_value = load[box.name]
+    end
+  end
+  return box2
+end
+
 local function checkbox_row(args)
   local boxes = {}
   local enabled = nil
@@ -163,27 +189,7 @@ local function checkbox_row(args)
     if type(box) == string then
       table.insert(boxes,{type="label", caption=box,enabled=enabled})
     else
-      local box2 = util.merge{{
-        type = "checkbox",
-        style = (box.type == "checkbox") and "checkbox" or nil,
-        state = false,
-        enabled = enabled,
-        handler = {
-          [defines.events.on_gui_checked_state_changed] =
-            (box.type and box.type == "radiobutton" and handlers.radio)
-            or handlers.check,
-            [defines.events.on_gui_elem_changed] =
-              box.type and box.type == "choose-elem-button" and handlers.elem
-        }
-      },box}
-      box2.name = box.name and (prefix .. box.name)
-      if load and load[box.name] ~= nil then
-        if box2.type == "checkbox" or box2.type == "radiobutton" then
-          box2.state = load[box.name]
-        -- elseif box2.type == "choose-elem-button" then
-        --   box2.elem_value = load[box.name]
-        end
-      end
+      box2 = checkbox(box,load)
       table.insert(boxes,box2)
       if enabled == nil and not args.all_enabled then
         enabled = (box2.enabled == nil or box2.enabled) and box2.state
@@ -196,7 +202,7 @@ end
 
 local function tooltip(name)
   return {type="sprite", sprite="info_no_border", style="recipe-combinator_tooltip_sprite",
-    tooltip={"recipe-combinator-gui.tooltip-"..name}}
+    tooltip={"recipe-combinator-gui.tooltip_"..name}}
 end
 
 local function open(player_index, entity)
@@ -250,7 +256,7 @@ local function open(player_index, entity)
   }
 
   local machines_inner = {type="flow",direction="horizontal",children={},
-    style="recipe-combinator_unpadded_horizontal_flow"}
+    style="recipe-combinator_unpadded_horizontal_flow_first"}
   local machines_outer = {type="flow",direction="vertical",children={machines_inner}}
   local rowidx,totalidx=0,0
   local function append_machine(machine)
@@ -258,6 +264,9 @@ local function open(player_index, entity)
     totalidx = totalidx+1
     if rowidx == 11 then
       rowidx=1
+      machines_inner = {type="flow",direction="horizontal",children={},
+        style="recipe-combinator_unpadded_horizontal_flow"}
+      table.insert(machines_outer.children,machines_inner)
     end
     local button = {
         type="choose-elem-button",elem_type="entity",style="recipe-combinator_machine_picker",
@@ -273,67 +282,72 @@ local function open(player_index, entity)
     name=prefix.."combi_config", type="frame", style="inside_shallow_frame_with_padding", direction="vertical",
     children = {
       {type="flow", style="recipe-combinator_label_toolip", children={
-        {type="label", caption={"recipe-combinator-gui.label-which-machines"}, style="bold_label"},
-        tooltip("which-machines")
+        {type="label", caption={"recipe-combinator-gui.label_which_machines"}, style="bold_label"},
+        tooltip("which_machines")
       }},
       machines_outer,
+      {type="flow", children={
+        checkbox({name="include_disabled"}),
+        checkbox({name="include_hidden"})
+      }},
+      
       {type="line", style="recipe-combinator_section_divider_line"},
-      {type="label", caption={"recipe-combinator-gui.label-input"}, style="bold_label"},
+      {type="label", caption={"recipe-combinator-gui.label_input"}, style="bold_label"},
       checkbox_row{row={
         --{ type = "label", caption={"recipe-combinator-gui.index-row-caption"}, style="label"},
-        { name="input_recipe",      state=true,caption={"recipe-combinator-gui.index-recipe"}},
-        { name="input_ingredients", state=false,caption={"recipe-combinator-gui.index-ingredient"}},
-        { name="input_product",     state=false,caption={"recipe-combinator-gui.index-product"}}
+        { name="input_recipe",      state=true,caption={"recipe-combinator-gui.index_recipe"}},
+        { name="input_ingredients", state=false,caption={"recipe-combinator-gui.index_ingredient"}},
+        { name="input_product",     state=false,caption={"recipe-combinator-gui.index_product"}}
       }, all_enabled=true, load=load},
 
       {type="line", style="recipe-combinator_section_divider_line"},
       {type="flow", style="recipe-combinator_label_toolip", children={
-        {type="label", caption={"recipe-combinator-gui.label-one"}, style="bold_label"},
+        {type="label", caption={"recipe-combinator-gui.label_one"}, style="bold_label"},
         tooltip("section-one")
       }},
       checkbox_row{row={
-        { name="show_recipe", style=checkbox_header, caption = { "recipe-combinator-gui.show-recipe-checkbox" }, state = true },
+        { name="show_recipe", style=checkbox_header },
         stretch,
-        { name="show_recipe_neg", caption = { "recipe-combinator-gui.negate-checkbox" }, state = true },
-        { name="show_recipe_ti",  caption = { "recipe-combinator-gui.times-input-checkbox" }, state = true }
+        { name="show_recipe_neg", caption = { "recipe-combinator-gui.negate_checkbox" } },
+        { name="show_recipe_ti",  caption = { "recipe-combinator-gui.times_input_checkbox" } }
       }, load=load},
       checkbox_row{row={
-        { name="show_ingredients", style=checkbox_header, caption = { "recipe-combinator-gui.show-recipe-ingredients-checkbox" }, state = false },
+        { name="show_ingredients", style=checkbox_header },
         stretch,
-        { name="show_ingredients_neg", caption = { "recipe-combinator-gui.negate-checkbox" }, state = true },
-        { name="show_ingredients_ti",  caption = { "recipe-combinator-gui.times-input-checkbox" }, state = true }
+        { name="show_ingredients_neg", caption = { "recipe-combinator-gui.negate_checkbox" }},
+        { name="show_ingredients_ti",  caption = { "recipe-combinator-gui.times_input_checkbox" } }
       }, load=load},
       checkbox_row{row={
-        { name="show_products", style=checkbox_header, caption = { "recipe-combinator-gui.show-recipe-products-checkbox" }, state = true },
+        { name="show_products", style=checkbox_header },
         stretch,
-        { name="show_products_neg", caption = { "recipe-combinator-gui.negate-checkbox" }, state = false },
-        { name="show_products_ti",  caption = { "recipe-combinator-gui.times-input-checkbox" }, state = true }
+        { name="show_products_neg", caption = { "recipe-combinator-gui.negate_checkbox" } },
+        { name="show_products_ti",  caption = { "recipe-combinator-gui.times_input_checkbox" } }
       }, load=load},
       checkbox_row{name="show_time_pane", row={
-        { name="show_time", style=checkbox_header, caption = { "recipe-combinator-gui.show-crafting-time-checkbox" }, state = false },
+        { name="show_time", style=checkbox_header },
         { name="show_time_signal", type = "choose-elem-button", style="recipe-combinator_signal_button", elem_type="signal" },
         stretch,
-        { name="show_time_neg", caption = { "recipe-combinator-gui.negate-checkbox" }, state = false },
-        { name="show_time_ti",  caption = { "recipe-combinator-gui.times-input-checkbox" }, state = false }
+        { name="show_time_neg", caption = { "recipe-combinator-gui.negate_checkbox" } },
+        { name="show_time_ti",  caption = { "recipe-combinator-gui.times_input_checkbox" } }
       }, load=load},
       checkbox_row{row={
-        { name="show_modules", style=checkbox_header, caption = { "recipe-combinator-gui.show-allowed-modules-checkbox" }, state = true },
+        { name="show_modules", style=checkbox_header },
         stretch,
-        { name="show_modules_opc", type="radiobutton", style="radiobutton", caption = { "recipe-combinator-gui.one-module-per-category-radio" }, state = true },
-        { name="show_modules_all",type="radiobutton", style="radiobutton", caption = { "recipe-combinator-gui.all-modules-radio" }, state = false }
+        { name="show_modules_opc", type="radiobutton", style="radiobutton" },
+        { name="show_modules_all",type="radiobutton", style="radiobutton" }
       }, load=load},
       checkbox_row{row={
         -- TODO: options for only the first, etc?
-        { name="show_machines", style=checkbox_header, caption = { "recipe-combinator-gui.show-machines" }, state = false }
+        { name="show_machines", style=checkbox_header }
       }, load=load},
 
       {type="line", style="recipe-combinator_section_divider_line"},
       {type="flow", style="recipe-combinator_label_toolip", children={
-        {type="label", caption={"recipe-combinator-gui.label-all"}, style="bold_label"}
+        {type="label", caption={"recipe-combinator-gui.label_all"}, style="bold_label"}
         -- tooltip("section-all")
       }},
       checkbox_row{row={
-        { name="show_all_recipes", style=checkbox_header, caption = { "recipe-combinator-gui.show-all-recipes" }, state = false },
+        { name="show_all_recipes", style=checkbox_header },
         tooltip("show-all-recipes")
       }, load=load}
     }

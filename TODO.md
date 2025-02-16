@@ -2,6 +2,9 @@
 
 * Quality indicator: output a signal "Q" or so whose quality is set to the recipe quality, for downstream use
 * Undo / redo support
+* Update on state reload
+* Update on techs researched
+* Update on py TURD selected or similar??
 * Copy / paste items support
 * Spoilage support
 * Make "show all recipes" exclusive with other options

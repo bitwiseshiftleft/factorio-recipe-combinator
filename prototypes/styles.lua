@@ -31,7 +31,10 @@ styles["recipe-combinator_label_toolip"] = {
   
 styles["recipe-combinator_unpadded_horizontal_flow"] = {
     type = "horizontal_flow_style",
-    bottom_margin = -8
+    top_margin = -4
+}
+styles["recipe-combinator_unpadded_horizontal_flow_first"] = {
+    type = "horizontal_flow_style"
 }
   
 styles["recipe-combinator_tooltip_sprite"] = {

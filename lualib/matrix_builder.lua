@@ -9,22 +9,26 @@ local HAVE_QUALITY = script.feature_flags.quality and script.feature_flags.space
 -- Supported matrix flags
 -- FLAG_DENSE: use a dense flags-matrix layout.  Better for modules.
 -- Can't support multiply or quality.  All entries must be 1
-local FLAG_DENSE        = 1
+local FLAG_DENSE          = 1
 
 -- FLAG_MULTIPLY: multiply this entry by the input quantity
-local FLAG_MULTIPLY     = 2
+local FLAG_MULTIPLY       = 2
 
 -- FLAG_NOQUAL: this output's quality isn't based on the input quality
-local FLAG_NOQUAL       = 4
+local FLAG_NOQUAL         = 4
 if not HAVE_QUALITY then FLAG_NOQUAL = 0 end
 
 -- FLAG_NORMAL_INPUT: this row is only valid if the input has normal quality (e.g. a fluid)
-local FLAG_NORMAL_INPUT = 8
+local FLAG_NORMAL_INPUT   = 8
 if not HAVE_QUALITY then FLAG_NORMAL_INPUT = 0 end
 
 -- FLAG_RED: output this info on the red wire (TODO)
 -- FLAG_GREEN: output this info on the green wire (TODO)
 local FLAG_RED,FLAG_GREEN = 16,32
+
+-- FLAG_NEGATE: causes elements added to be negated
+-- This flag doesn't stay in the flags field: it gets applied immediately
+local FLAG_NEGATE         = 1024
 
 local MatrixBuilderRow = {}
 function MatrixBuilderRow:new(signal)
@@ -35,19 +39,24 @@ function MatrixBuilderRow:new(signal)
 end
 
 function MatrixBuilderRow:set_entry(output_signal,value,flags,add)
-  local sigstr = output_signal.type .. ":" .. output_signal.name
-  flags = flags or 0
-  local subrow = self.subrows_by_flags[flags]
-  if not subrow then
-    subrow = {}
-    self.subrows_by_flags[flags] = subrow
-  end
-  if subrow[sigstr] then
-    if add then value = value + subrow[sigstr][2] end
-    subrow[sigstr][2] = value
-  else
-    subrow[sigstr] = {output_signal,value}
-  end
+    value = value or 1
+    flags = flags or 0
+    if band(flags, FLAG_NEGATE) > 0 then
+        flags = flags-FLAG_NEGATE
+        value = -value
+    end
+    local sigstr = output_signal.type .. ":" .. output_signal.name
+    local subrow = self.subrows_by_flags[flags]
+    if not subrow then
+        subrow = {}
+        self.subrows_by_flags[flags] = subrow
+    end
+    if subrow[sigstr] then
+        if add then value = value + subrow[sigstr][2] end
+        subrow[sigstr][2] = value
+    else
+        subrow[sigstr] = {output_signal,value}
+    end
 end
 
 function MatrixBuilderRow:is_empty()
@@ -64,6 +73,10 @@ function MatrixBuilderRow:add_copy_with_flag_change(other,or_flags,multiplier)
     -- self += multiplier * other, but shift entries of other by ORing their flags with or_flags
     or_flags = or_flags or 0
     multiplier = multiplier or 1
+    if band(or_flags, FLAG_NEGATE) > 0 then
+        or_flags = or_flags - flag_negate
+        multiplier = -multiplier
+    end
     for flags,subrow in pairs(other.subrows_by_flags) do
         local new_flags = bor(flags,or_flags)
         if self.subrows_by_flags[new_flags] then
@@ -168,6 +181,7 @@ M.FLAG_NOQUAL        = FLAG_NOQUAL
 M.FLAG_NORMAL_INPUT  = FLAG_NORMAL_INPUT
 M.FLAG_RED           = FLAG_RED
 M.FLAG_GREEN         = FLAG_GREEN
+M.FLAG_NEGATE        = FLAG_NEGATE
 M.MatrixBuilder      = MatrixBuilder
 
 return M
