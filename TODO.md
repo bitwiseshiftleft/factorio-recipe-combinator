@@ -1,26 +1,33 @@
 # TODO
 
-* Quality indicator: output a signal "Q" or so whose quality is set to the recipe quality, for downstream use
-
+## Updating
 * Update on mod config reload
 * Update on techs researched ("if unlocked" and if tech unlocks recipes only)
 * Graceful upgrade with "defunct" combinators
 
+## Copy-paste and all that
 * Copy / paste items support
 * Undo / redo support
 
-* Spoilage support
-* Make "show all recipes" exclusive with other options
-* Right-alias support
+## GUI and features
+* Make "show all recipes" exclusive with other options?
+* Right-alias support in the matrix builder
+* Configurable: output all qualities when fluid output selected?
+
+## Lua cleanup
+* Separate circuit.lua from recipe combinator matrix logic
+
+## Test
 * Test test test
 * Test again with no quality
 
-Py support
+## Py functionality
 * Test in py
 * Make a "commit" button for py, for perf reasons
 * Update on py TURD selected or similar
 
-Speculative future features
+## Speculative future features
+* Deal with spoilage time increases from quality
 * Deal with probabilities
 * Deal with productivity bonuses (either inherent in the machine or with modules)
 * Better graphics

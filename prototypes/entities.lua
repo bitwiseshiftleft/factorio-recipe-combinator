@@ -38,6 +38,7 @@ local hidden_combinator = {
     circuit_wire_max_distance = 9
 }
 
+
 -- Inserter for indicating (with its filters) what kind combinator we are
 local indicator_inserter = {
     type = "inserter",
@@ -152,3 +153,33 @@ data:extend{
     },
     recipe_combinator
 }
+
+if feature_flags["spoiling"] then data:extend{
+    {
+        type="recipe-category",
+        name="recipe-combinator-spoilage-mechanic",
+        hidden=true,
+        hidden_in_factoripedia=true
+    },
+    {
+        type="item",
+        name="recipe-combinator-spoilage-mechanic",
+        hidden_in_factoripedia=true,
+        icon = "__space-age__/graphics/icons/spoilage.png",
+        stack_size=1,
+        auto_recycle=false,
+        place_result="recipe-combinator-spoilage-mechanic"
+    },
+    {
+        type="assembling-machine",
+        name="recipe-combinator-spoilage-mechanic",
+        crafting_categories={"recipe-combinator-spoilage-mechanic"},
+        energy_usage="1J",
+        energy_source={type="void"},
+        crafting_speed=1,
+        icon = "__space-age__/graphics/icons/spoilage.png",
+        placeable_by = {item="recipe-combinator-spoilage-mechanic",count=1},
+        hidden_in_factoripedia=true,
+        factoriopedia_description = {"factoriopedia-description.recipe-combinator-spoilage-mechanic"}
+    }
+} end

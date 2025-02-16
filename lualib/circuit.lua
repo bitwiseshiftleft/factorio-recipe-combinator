@@ -337,9 +337,34 @@ local function cache_modules()
   end
 end
 
+local g_spoilage_cache=nil
+local function cache_spoilage()
+  if g_spoilage_cache or not script.feature_flags.spoiling then
+    g_spoilage_cache = {}
+    return
+  end
+  g_spoilage_cache = {}
+  for name,item in pairs(prototypes.item) do
+    local ticks = item.get_spoil_ticks()
+    if ticks > 0 then
+      g_spoilage_cache[name] = {
+        name="spoil:"..name,
+        ingredients={{name=name,type="item",amount=1}},
+        products=item.spoil_result
+          and {{name=item.spoil_result.name,type="item",amount=1}}
+          or {},
+        energy=ticks/60.,
+        allowed_module_categories={},
+        category="recipe-combinator-spoilage-mechanic"
+      }
+    end
+  end
+end
+
 local function init()
   cache_modules()
   cache_qualities()
+  cache_spoilage()
 end
 
 local function build_sparse_matrix(args)
@@ -503,7 +528,13 @@ local function destroy_components(entity)
 end
 
 
-local function build_matrix_combinator(entity, matrix)
+local function build_matrix_combinator(
+  entity,
+  matrix,
+  output_quality_sig,
+  output_quality_flags,
+  output_selected_signal
+)
   local builder = Builder:new(entity.surface, entity.position, entity.force)
 
 
@@ -593,7 +624,6 @@ local function build_matrix_combinator(entity, matrix)
     }
     -- Stage 3: buffer again (for parity with quality case)
     end_of_input_stage = builder:arithmetic{L=EACH,op="+",R=0,description="ri.buffer3",green={select_one}}
-
   end
 
   -- widget to connect combi's output to the main entity
@@ -630,6 +660,37 @@ local function build_matrix_combinator(entity, matrix)
       -- game.print("Build sparse matrix with "..tonumber(#matrix).." rows with flags="..tonumber(flags))
     end
   end
+
+  -- output quality indicator
+  if HAVE_QUALITY and output_quality_sig and output_quality_flags and output_quality_flags > 0 then
+    local qs4
+    if output_quality_sig.name == QUALITY.name
+      and output_quality_sig.type == QUALITY.type then
+      qs4 = builder:decider{
+        decisions={{L=EACH,op="!=",R=0}},
+        output={{out=EACH,set_one=true}},
+        red={quality_buffer},
+        description="ri.matrix.quality_buffer_4"
+      }
+    else
+      local quality_comb = builder:constant_combi({{output_quality_sig,1}}, "ri.matrix.quality_cc")
+      qs4 = builder:selector{op="quality-transfer",qual=QUALITY,out=output_quality_sig,
+        red={quality_buffer},green={quality_comb},
+        description="ri.matrix.quality_buffer_4"
+      }
+    end
+    local qs5 = builder:arithmetic{L=EACH,op="+",R=0,green={qs4},description="ri.matrix.quality_buffer_5"}
+    local qs6 = builder:arithmetic{L=EACH,op="+",R=0,green={qs5},description="ri.matrix.quality_buffer_6"}
+    connect_output(qs6,output_quality_flags)
+  end
+
+  -- output selected signal
+  if output_selected_signal and output_selected_signal > 0 then
+    local sel4 = builder:arithmetic{L=EACH,op="+",R=0,green={end_of_input_stage},description="ri.matrix.input_buffer_4"}
+    local sel5 = builder:arithmetic{L=EACH,op="+",R=0,green={sel4},description="ri.matrix.input_buffer_5"}
+    local sel6 = builder:arithmetic{L=EACH,op="+",R=0,green={sel5},description="ri.matrix.input_buffer_6"}
+    connect_output(sel6,output_selected_signal)
+  end
 end
 
 local function build_recipe_info_combinator(args)
@@ -646,6 +707,9 @@ local function build_recipe_info_combinator(args)
   local output_crafting_time_sig  = args.output_crafting_time_sig
   local output_all_recipes        = args.output_all_recipes
   local output_crafting_machine   = args.output_crafting_machine
+  local output_quality_sig        = args.output_quality_sig
+  local output_quality            = args.output_quality
+  local output_selected           = args.output_selected
   local one_module_per_category   = args.one_module_per_category
 
   local input_recipe_products     = args.input_recipe_products
@@ -653,7 +717,6 @@ local function build_recipe_info_combinator(args)
   local input_recipe              = args.input_recipe
   local include_hidden            = args.include_hidden
   local include_disabled          = args.include_disabled
-  -- TODO: more!  Scales, red/green, etc
 
   local module_table = output_allowed_modules and (
     (one_module_per_category and g_modules_per_category) or g_all_modules
@@ -736,14 +799,22 @@ local function build_recipe_info_combinator(args)
   for category,_ in pairs(crafting_time_scale) do
     local machine_proto=category_to_machine_proto[category]
     local machine_has_modules = machine_proto.module_inventory_size and (machine_proto.module_inventory_size>0)
-    for name,recipe in pairs(prototypes.get_recipe_filtered{{filter="category",category=category}}) do
+    local recipes,is_spoilage
+    if category == "recipe-combinator-spoilage-mechanic" then
+      recipes = g_spoilage_cache
+      is_spoilage = true
+    else
+      recipes = prototypes.get_recipe_filtered{{filter="category",category=category}}
+    end
+    for name,recipe in pairs(recipes) do
       local suitable =
         string.find(name,"^parameter%-%d$") == nil
-        and (include_disabled or force.recipes[name])
+        and (is_spoilage or include_disabled or force.recipes[name])
         and (include_hidden or not recipe.hidden)
       if suitable then
-        local sig = {type="recipe",name=recipe.name}
-        local row = matrix:create_or_add_row(sig, not input_recip)
+        local sig = is_spoilage and {type="item",name=recipe.ingredients[1].name}
+          or {type="recipe",name=recipe.name}
+        local row = matrix:create_or_add_row(sig, is_spoilage or not input_recipe)
         local scaled_time = ceil(recipe.energy * crafting_time_scale[recipe.category])
         local ingredients = recipe.ingredients
 
@@ -769,7 +840,7 @@ local function build_recipe_info_combinator(args)
             bor(output_crafting_time,FLAG_NOQUAL + flag_all_fluid))
         end
 
-        if output_recipe then
+        if output_recipe and not is_spoilage then
           row:set_entry(sig,1,bor(output_recipe,flag_all_fluid))
         end
 
@@ -832,7 +903,7 @@ local function build_recipe_info_combinator(args)
   end
 
   -- go go go!
-  build_matrix_combinator(entity, matrix)
+  build_matrix_combinator(entity, matrix, output_quality_sig, output_quality, output_selected)
 end
 
 local DEFAULT_ROLLUP = {
@@ -860,6 +931,15 @@ local DEFAULT_ROLLUP = {
   show_modules_all = false,
   show_machines = false,
   output_all_recipes = false,
+
+  show_quality = false,
+  show_quality_signal = {type="virtual",name="signal-Q"},
+  show_quality_red = true,
+  show_quality_green = true,
+
+  show_selected = false,
+  show_selected_red = true,
+  show_selected_green = true,
 
   show_modules_red = true,
   show_modules_green = true,
@@ -903,6 +983,12 @@ local function rollup_state_to_build_args(entity, rollup)
 
     one_module_per_category     = ru.show_modules_opc,
 
+    output_quality_sig          = rollup.show_quality and rollup.show_quality_signal,
+    output_quality              = rollup_flags(ru.show_quality,false,false,
+      ru.show_quality_red, ru.show_quality_green),
+    output_selected              = rollup_flags(ru.show_selected,false,false,
+      ru.show_selected_red, ru.show_selected_green),
+
     output_allowed_modules      =
       rollup_flags(ru.show_modules,false,false,
         rollup.show_modules_red, ru.show_modules_green),
@@ -927,6 +1013,7 @@ local function rollup_state_to_build_args(entity, rollup)
 
     output_crafting_time_sig    = rollup.show_time and rollup.show_time_signal
   }
+  -- game.print(serpent.line(ret))
   return ret
 end
 

@@ -52,8 +52,7 @@ styles["recipe-combinator_machine_picker"] = {
     parent = "slot_button",
     right_margin = -4
 }
-  
-  
+
 styles["recipe-combinator_checkbox_header"] = {
     type = "checkbox_style",
     parent = "checkbox"

@@ -5,6 +5,7 @@ local tagged_entity = require "lualib.tagged_entity"
 
 local M = {}
 local WINDOW_ID = "recipe-combinator-window"
+local HAVE_QUALITY = script.feature_flags.quality and script.feature_flags.space_travel
 
 handlers = {}
 
@@ -313,10 +314,30 @@ local function open(player_index, entity)
       }, all_enabled=true, load=load},
 
       {type="line", style="recipe-combinator_section_divider_line"},
+      {type="label", caption={"recipe-combinator-gui.label_recap"}, style="bold_label"},
+
+      checkbox_row{row={
+        { name="show_selected", style=checkbox_header },
+        tooltip("show_selected"),
+        stretch,
+        chk("show_selected","red"),
+        chk("show_selected","green")
+      }, load=load},
+      HAVE_QUALITY and checkbox_row{name="show_quality_pane", row={
+        { name="show_quality", style=checkbox_header },
+        tooltip("show_quality"),
+        { name="show_quality_signal", type = "choose-elem-button", style="recipe-combinator_signal_button", elem_type="signal" },
+        stretch,
+        chk("show_quality","red"),
+        chk("show_quality","green")
+      }, load=load} or nil,
+
+      {type="line", style="recipe-combinator_section_divider_line"},
       {type="flow", style="recipe-combinator_label_toolip", children={
-        {type="radiobutton",
+        {type="label",
           caption={"recipe-combinator-gui.label_one"},
-          style="recipe-combinator_header_radio",
+          -- style="recipe-combinator_header_radio",
+          style="bold_label",
           state=en_one},
         tooltip("section_one")
       }},
@@ -374,9 +395,11 @@ local function open(player_index, entity)
 
       {type="line", style="recipe-combinator_section_divider_line"},
       {type="flow", style="recipe-combinator_label_toolip", children={
-        {type="radiobutton", caption={"recipe-combinator-gui.label_all"},
-          style="recipe-combinator_header_radio",
-          state=en_all},
+        {type="label",
+          caption={"recipe-combinator-gui.label_all"},
+          -- style="recipe-combinator_header_radio"
+          style="bold_label"
+        },
         tooltip("section-all")
       }},
       {type="flow",direction="vertical",name=prefix.."subpane_all",
@@ -407,6 +430,13 @@ local function open(player_index, entity)
   local sts_name = "show_time_signal"
   if show_time_sig and sts_name and load and load[sts_name] then
     show_time_sig.elem_value = load[sts_name]
+  end
+  local show_quality_sig = main_window
+    [prefix.."combi_config"]
+    [prefix.."show_quality_pane"][prefix.."show_quality_signal"]
+  local sqs_name = "show_quality_signal"
+  if show_quality_sig and sqs_name and load and load[sqs_name] then
+    show_quality_sig.elem_value = load[sqs_name]
   end
 
   main_window.auto_center = true
