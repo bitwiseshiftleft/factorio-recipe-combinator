@@ -300,8 +300,8 @@ local function open(player_index, entity)
       }},
       machines_outer,
       {type="flow", style="recipe-combinator_checkbox_row", children={
-        checkbox({name="include_disabled"}),
-        checkbox({name="include_hidden"})
+        checkbox({name="include_disabled"},load),
+        checkbox({name="include_hidden"},load)
       }},
       
       {type="line", style="recipe-combinator_section_divider_line"},

@@ -1,13 +1,14 @@
 # TODO
 
 ## Updating
-* Update on mod config reload
-* Update on techs researched ("if unlocked" and if tech unlocks recipes only)
+* Blocking: Update on mod config reload
+* Blocking: Update on techs researched ("if unlocked" and if tech unlocks recipes only)
 * Graceful upgrade with "defunct" combinators
 
 ## Copy-paste and all that
-* Copy / paste items support
-* Undo / redo support
+* Blocking: Copy / paste items support
+* Blocking: Undo / redo support
+* Paste blueprint over existing items support
 
 ## GUI and features
 * Make "show all recipes" exclusive with other options?
@@ -15,16 +16,21 @@
 * Configurable: output all qualities when fluid output selected?
 
 ## Lua cleanup
+* Blocking: make sure we aren't leaving dead tags in storage, or hack it with a display screen
 * Separate circuit.lua from recipe combinator matrix logic
 
 ## Test
-* Test test test
-* Test again with no quality
+* Blocking: Test test test
+* Blocking: Test again with no quality
 
 ## Py functionality
-* Test in py
-* Make a "commit" button for py, for perf reasons
+* Make a "commit" button for py, for perf reasons?  Eh, probably good enough for now (TM)
 * Update on py TURD selected or similar
+
+## Packaging
+* Blocking: flesh out the README
+* Blocking: make a screenshot and thumbnail
+* Package and upload
 
 ## Speculative future features
 * Deal with spoilage time increases from quality

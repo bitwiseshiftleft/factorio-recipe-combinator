@@ -165,7 +165,7 @@ if feature_flags["spoiling"] then data:extend{
         type="item",
         name="recipe-combinator-spoilage-mechanic",
         hidden_in_factoripedia=true,
-        icon = "__space-age__/graphics/icons/spoilage.png",
+        icon = "__recipe_combinator__/graphics/compost-bin.png",
         stack_size=1,
         auto_recycle=false,
         place_result="recipe-combinator-spoilage-mechanic"
@@ -177,7 +177,7 @@ if feature_flags["spoiling"] then data:extend{
         energy_usage="1J",
         energy_source={type="void"},
         crafting_speed=1,
-        icon = "__space-age__/graphics/icons/spoilage.png",
+        icon = "__recipe_combinator__/graphics/compost-bin.png",
         placeable_by = {item="recipe-combinator-spoilage-mechanic",count=1},
         hidden_in_factoripedia=true,
         factoriopedia_description = {"factoriopedia-description.recipe-combinator-spoilage-mechanic"}
