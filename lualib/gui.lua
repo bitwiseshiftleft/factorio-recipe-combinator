@@ -400,7 +400,7 @@ local function open(player_index, entity)
           -- style="recipe-combinator_header_radio"
           style="bold_label"
         },
-        tooltip("section-all")
+        tooltip("section_all")
       }},
       {type="flow",direction="vertical",name=prefix.."subpane_all",
         enabled=en_all, children={
@@ -427,7 +427,7 @@ local function open(player_index, entity)
           { name="show_all_valid_inputs", style=checkbox_header },
           tooltip("show_all_valid_inputs"),
           stretch,
-          {name = "show_all_valid_inputs_quality" },
+          HAVE_QUALITY and {name = "show_all_valid_inputs_quality" } or nil,
           chk("show_all_valid_inputs","red"),
           chk("show_all_valid_inputs","green")
         }, load=load}

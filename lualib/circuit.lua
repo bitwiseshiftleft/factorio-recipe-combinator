@@ -945,7 +945,7 @@ local function build_recipe_info_combinator(args)
         end
 
         if output_all_inputs then
-          row:set_entry(matrix_builder.MAKE_VALID_ANYWAY, 1, fluid)
+          row:set_entry(matrix_builder.MAKE_VALID_ANYWAY, 1, flag_all_fluid)
         end
 
         if output_crafting_time then
@@ -1003,12 +1003,14 @@ local function build_recipe_info_combinator(args)
 
         if input_recipe_ingredients then
           for idx=1,#ingredients do
-            index_by_item(row,ingredients[idx],flag_all_fluid,output_all_recipes)
+            local fluid = (ingredients[idx].type == "fluid") and FLAG_NORMAL_INPUT or flag_all_fluid
+            index_by_item(row,ingredients[idx],fluid,output_all_recipes)
           end
         end
         if input_recipe_products then
           for idx=1,#products do
-            index_by_item(row,products[idx],flag_all_fluid,output_all_recipes)
+            local fluid = (products[idx].type == "fluid") and FLAG_NORMAL_INPUT or flag_all_fluid
+            index_by_item(row,products[idx],fluid,output_all_recipes)
           end
         end
       end

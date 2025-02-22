@@ -11,6 +11,7 @@
 * Right-alias support in the matrix builder
 * Could in theory do ranged right-alias support e.g. select (i,j=i+1) or whatever from one combinator and have i<=x<=j instead of i=x.  In particular this would allow "x at only normal quality" vs "x at all qualities" on adjacent indices.
 * Configurable: output all qualities when fluid output selected?
+* Hide quality things if not HAVE_QUALITY
 
 ## Lua cleanup
 * Tighten up on_died to avoid leaving dead tags in storage (currently clean one tick after on_load anyway)
