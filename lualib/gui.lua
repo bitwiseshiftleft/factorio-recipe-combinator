@@ -189,7 +189,7 @@ local function checkbox_row(args)
   for _,box in ipairs(args.row or {}) do
     if type(box) == string then
       table.insert(boxes,{type="label", caption=box,enabled=enabled})
-    else
+    elseif next(box) ~= nil then
       box2 = checkbox(box,load,enabled)
       table.insert(boxes,box2)
       if enabled == nil and not args.all_enabled then
@@ -323,14 +323,14 @@ local function open(player_index, entity)
         chk("show_selected","red"),
         chk("show_selected","green")
       }, load=load},
-      HAVE_QUALITY and checkbox_row{name="show_quality_pane", row={
+      (HAVE_QUALITY and checkbox_row{name="show_quality_pane", row={
         { name="show_quality", style=checkbox_header },
         tooltip("show_quality"),
         { name="show_quality_signal", type = "choose-elem-button", style="recipe-combinator_signal_button", elem_type="signal" },
         stretch,
         chk("show_quality","red"),
         chk("show_quality","green")
-      }, load=load} or nil,
+      }, load=load} or {}),
 
       {type="line", style="recipe-combinator_section_divider_line"},
       {type="flow", style="recipe-combinator_label_toolip", children={
@@ -427,7 +427,7 @@ local function open(player_index, entity)
           { name="show_all_valid_inputs", style=checkbox_header },
           tooltip("show_all_valid_inputs"),
           stretch,
-          HAVE_QUALITY and {name = "show_all_valid_inputs_quality" } or nil,
+          (HAVE_QUALITY and {name = "show_all_valid_inputs_quality" } or {}),
           chk("show_all_valid_inputs","red"),
           chk("show_all_valid_inputs","green")
         }, load=load}
@@ -451,12 +451,14 @@ local function open(player_index, entity)
   if show_time_sig and sts_name and load and load[sts_name] then
     show_time_sig.elem_value = load[sts_name]
   end
-  local show_quality_sig = main_window
-    [prefix.."combi_config"]
-    [prefix.."show_quality_pane"][prefix.."show_quality_signal"]
-  local sqs_name = "show_quality_signal"
-  if show_quality_sig and sqs_name and load and load[sqs_name] then
-    show_quality_sig.elem_value = load[sqs_name]
+  if HAVE_QUALITY then
+    local show_quality_sig = main_window
+      [prefix.."combi_config"]
+      [prefix.."show_quality_pane"][prefix.."show_quality_signal"]
+    local sqs_name = "show_quality_signal"
+    if show_quality_sig and sqs_name and load and load[sqs_name] then
+      show_quality_sig.elem_value = load[sqs_name]
+    end
   end
 
   main_window.auto_center = true

@@ -1,6 +1,8 @@
 # Recipe combinator
 
-This mod is intended for people who want to make automatic malls.  It adds a new type of combinator which gives information about recipes.
+This mod is intended for people who want to make automatic malls.  It adds a new type of combinator which gives a wealth of information about recipes.
+
+![recipe combinator screenshot](resources/screenshot-cryoplant.jpg)
 
 Features:
 
@@ -8,7 +10,7 @@ Features:
 * Output recipe ingredients, products, and crafting time.
 * Output which machine should craft the recipe.
 * Output which modules are supported by that machine/recipe.
-* OUtput all recipes, or all recipes that produce a certain product.
+* OUtput all recipes supported by a certain machine, or all recipes that produce a certain product.
 * Outputs can be on red or green wires, and can be optionally negated or multiplied by the input.
 * Supports quality.
 * Partially supports getting info on spoilage time and products.
