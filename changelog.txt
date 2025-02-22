@@ -1,0 +1,7 @@
+---------------------------------------------------------------------------------------------------
+Version: 0.1
+Date: 2025-02-22
+
+  Initial testing release.
+  Can create recipe combinators, which are reskinned arithmetic combinators.
+  The GUI probably exposes too many optional and allows you to select them all at once.
