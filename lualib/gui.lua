@@ -411,6 +411,26 @@ local function open(player_index, entity)
           chk("show_all_recipes","red"),
           chk("show_all_recipes","green")
         }, load=load}
+      }},
+
+      {type="line", style="recipe-combinator_section_divider_line"},
+      {type="flow", style="recipe-combinator_label_toolip", children={
+        {type="label",
+          caption={"recipe-combinator-gui.label_allvalid"},
+          -- style="recipe-combinator_header_radio"
+          style="bold_label"
+        }
+      }},
+      {type="flow",direction="vertical",name=prefix.."subpane_allvalid",
+        enabled=en_allvalid, children={
+        checkbox_row{row={
+          { name="show_all_valid_inputs", style=checkbox_header },
+          tooltip("show_all_valid_inputs"),
+          stretch,
+          {name = "show_all_valid_inputs_quality" },
+          chk("show_all_valid_inputs","red"),
+          chk("show_all_valid_inputs","green")
+        }, load=load}
       }}
     }
   }

@@ -7,7 +7,7 @@
 * Undo/redo paste settings
 
 ## GUI and features
-* Make "show all recipes" exclusive with other options?
+* Make "show all recipes" and "show all valid" exclusive with other options?
 * Right-alias support in the matrix builder
 * Could in theory do ranged right-alias support e.g. select (i,j=i+1) or whatever from one combinator and have i<=x<=j instead of i=x.  In particular this would allow "x at only normal quality" vs "x at all qualities" on adjacent indices.
 * Configurable: output all qualities when fluid output selected?
@@ -15,11 +15,11 @@
 ## Lua cleanup
 * Tighten up on_died to avoid leaving dead tags in storage (currently clean one tick after on_load anyway)
 * Separate circuit.lua from recipe combinator matrix logic
+* Add filters to events for performance
 
 ## Test
-* Blocking: test redo support
-* Blocking: Test test test
-* Blocking: Test again with no quality
+* Test test test
+* Test again with no quality
 
 ## Py functionality
 * Make a "commit" button for py, for perf reasons?  Eh, probably good enough for now (TM)
@@ -36,5 +36,4 @@
 * Deal with productivity bonuses (either inherent in the machine or with modules)
 * Better graphics
 * Export to vanilla combinator array
-* Constant combinators (list all fluids/items/recipes/recipes for certain machines/...)
 * Some kind of matrix optimizer (e.g. if one column dominates another, then add an alias)

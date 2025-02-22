@@ -4,6 +4,10 @@ local band = bit32.band
 local bor  = bit32.bor
 
 local M = {}
+
+-- Placeholder: cause something to be a valid input even if there is no info to show
+local MAKE_VALID_ANYWAY = {type="MAKE_VALID_ANYWAY", name="MAKE_VALID_ANYWAY"}
+
 local HAVE_QUALITY = script.feature_flags.quality and script.feature_flags.space_travel
 
 -- Supported matrix flags
@@ -148,12 +152,15 @@ function MatrixBuilder:collate()
             local nonempty = false
             local ret_flags
             local subrow_collated = {}
+            local is_valid_anyway = false
             for colstr_,sigval in pairs(subrow) do
-                if sigval[2] ~= 0 then
+                if sigval[1].type == MAKE_VALID_ANYWAY.type then
+                    is_valid_anyway = true
+                elseif sigval[2] ~= 0 then
                     table.insert(subrow_collated,sigval)
                 end
             end
-            if #subrow_collated > 0 then
+            if #subrow_collated > 0 or is_valid_anyway then
                 if not ret_flags then
                     if not matrix[flags] then matrix[flags] = {} end
                     ret_flags = matrix[flags]
@@ -182,6 +189,7 @@ M.FLAG_NORMAL_INPUT  = FLAG_NORMAL_INPUT
 M.FLAG_RED           = FLAG_RED
 M.FLAG_GREEN         = FLAG_GREEN
 M.FLAG_NEGATE        = FLAG_NEGATE
+M.MAKE_VALID_ANYWAY  = MAKE_VALID_ANYWAY
 M.MatrixBuilder      = MatrixBuilder
 
 return M

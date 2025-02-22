@@ -615,7 +615,9 @@ local function build_matrix_combinator(
   matrix,
   output_quality_sig,
   output_quality_flags,
-  output_selected_signal
+  output_selected_signal,
+  output_all_inputs,
+  output_all_inputs_quality
 )
   local builder = Builder:new(entity.surface, entity.position, entity.force)
 
@@ -630,6 +632,7 @@ local function build_matrix_combinator(
   input_buffer.get_wire_connector(IRED,  true).connect_to(entity.get_wire_connector(IRED,  true))
 
   local end_of_input_stage
+  local valid_combi
   local quality_buffer
   local end_of_input_stage_normal_only
   if HAVE_QUALITY then
@@ -649,7 +652,7 @@ local function build_matrix_combinator(
       table.insert(decisions_getqual,{NL=NGREEN,L=ANYTHING,op="=",R=idx})
       table.insert(decisions_getqual,{and_=true,NL=NRED,L=EACH,op="=",R=idx})
     end
-    local valid2_combi = builder:constant_combi(valid2, "ri.valid")
+    valid_combi = builder:constant_combi(valid2, "ri.valid")
     local quality_list = builder:constant_combi(literal_quality, "ri.quals")
 
     -- Stage 2: selection of one valid input
@@ -659,7 +662,7 @@ local function build_matrix_combinator(
         {and_=true,NL=NRED,L=EACH,op="!=",R=0}
       },
       output={{out=ANYTHING,WO=NGREEN}},
-      description="ri.buffer2",green={input_buffer},red={valid2_combi},
+      description="ri.buffer2",green={input_buffer},red={valid_combi},
       -- visible=true
     }
 
@@ -670,7 +673,7 @@ local function build_matrix_combinator(
         {and_=true,NL=NRED,L=EACH,op="!=",R=0}
       },
       output={{out=ANYTHING,WO=NRED}},
-      description="ri.qual2",green={input_buffer},red={valid2_combi},
+      description="ri.qual2",green={input_buffer},red={valid_combi},
     }
 
     -- Stage 3a set quality to normal
@@ -695,7 +698,7 @@ local function build_matrix_combinator(
     }
   else
     -- Stage 2: selection of one valid input
-    local valid_combi = builder:constant_combi(valid, "ri.valid")
+    valid_combi = builder:constant_combi(valid, "ri.valid")
     local select_one = builder:decider{
       decisions={
         {NL=NGREEN,L=EACH,op="!=",R=0},
@@ -766,6 +769,28 @@ local function build_matrix_combinator(
     connect_output(qs6,output_quality_flags)
   end
 
+  if output_all_inputs and output_all_inputs > 0 then
+    local prev = valid_combi
+    if HAVE_QUALITY and not output_all_inputs_quality then
+      prev = builder:selector{op="quality-transfer",qual=g_all_qualities[1],out=EACH,
+        green={prev},
+        description="ri.matrix.oai_quality"
+      }
+    else
+      prev = builder:arithmetic{L=EACH,op="+",R=0,green={prev},description="ri.matrix.input.oai_buffer1"}
+    end
+    prev = builder:decider{
+      decisions={{L=EACH,op="!=",R=0}},
+      output={{out=EACH,set_one=true}},
+      green={prev},
+      description="ri.matrix.oai_buffer2_set_one"
+    }
+    for i=3,6 do
+      prev = builder:arithmetic{L=EACH,op="+",R=0,green={prev},description="ri.matrix.input.oai_buffer"..tostring(i)}
+    end
+    connect_output(prev,output_all_inputs)
+  end
+
   -- output selected signal
   if output_selected_signal and output_selected_signal > 0 then
     local sel4 = builder:arithmetic{L=EACH,op="+",R=0,green={end_of_input_stage},description="ri.matrix.input_buffer_4"}
@@ -793,6 +818,8 @@ local function build_recipe_info_combinator(args)
   local output_quality            = args.output_quality
   local output_selected           = args.output_selected
   local one_module_per_category   = args.one_module_per_category
+  local output_all_inputs         = args.output_all_inputs
+  local output_all_inputs_quality = HAVE_QUALITY and args.output_all_inputs_quality
 
   local input_recipe_products     = args.input_recipe_products
   local input_recipe_ingredients  = args.input_recipe_ingredients
@@ -917,6 +944,10 @@ local function build_recipe_info_combinator(args)
           end
         end
 
+        if output_all_inputs then
+          row:set_entry(matrix_builder.MAKE_VALID_ANYWAY, 1, fluid)
+        end
+
         if output_crafting_time then
           row:set_entry(output_crafting_time_sig,scaled_time,
             bor(output_crafting_time,FLAG_NOQUAL + flag_all_fluid))
@@ -985,7 +1016,8 @@ local function build_recipe_info_combinator(args)
   end
 
   -- go go go!
-  build_matrix_combinator(entity, matrix, output_quality_sig, output_quality, output_selected)
+  build_matrix_combinator(entity, matrix, output_quality_sig,
+    output_quality, output_selected, output_all_inputs, output_all_inputs_quality)
 end
 
 local DEFAULT_ROLLUP = {
@@ -1036,7 +1068,11 @@ local DEFAULT_ROLLUP = {
   show_machines_red = true,
   show_machines_green = true,
   show_time_red = true,
-  show_time_green = true
+  show_time_green = true,
+  show_all_valid_inputs = false,
+  show_all_valid_inputs_quality = false,
+  show_all_valid_inputs_red = true,
+  show_all_valid_inputs_green = true
 }
 
 local function rollup_flags(enable,ti,neg,red,green)
@@ -1092,6 +1128,10 @@ local function rollup_state_to_build_args(entity, rollup)
     output_crafting_time        =
       rollup_flags(ru.show_time,ru.show_time_ti,ru.show_time_neg,
         ru.show_time_red, ru.show_time_green),
+    output_all_inputs        =
+      rollup_flags(ru.show_all_valid_inputs,false,false,
+        ru.show_all_valid_inputs_red, ru.show_all_valid_inputs_green),
+    output_all_inputs_quality = ru.show_all_valid_inputs_quality,
 
     output_crafting_time_sig    = rollup.show_time and rollup.show_time_signal
   }
