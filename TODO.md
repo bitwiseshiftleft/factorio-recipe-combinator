@@ -6,17 +6,19 @@
 * Graceful upgrade with "defunct" combinators
 
 ## Copy-paste and all that
-* Blocking: Copy / paste items support
 * Blocking: Undo / redo support
-* Paste blueprint over existing items support
+* Blocking: update GUI if someone pastes over the item
+* Blocking: diagnose rounding issues in blueprint pasting
+* Add indicator inserters to blueprint?
 
 ## GUI and features
 * Make "show all recipes" exclusive with other options?
 * Right-alias support in the matrix builder
+* Could in theory do ranged right-alias support e.g. select (i,j=i+1) or whatever from one combinator and have i<=x<=j instead of i=x.  In particular this would allow "x at only normal quality" vs "x at all qualities" on adjacent indices.
 * Configurable: output all qualities when fluid output selected?
 
 ## Lua cleanup
-* Blocking: make sure we aren't leaving dead tags in storage, or hack it with a display screen
+* Blocking: make sure we aren't leaving dead tags in storage, or hack it with garbage collection on load
 * Separate circuit.lua from recipe combinator matrix logic
 
 ## Test

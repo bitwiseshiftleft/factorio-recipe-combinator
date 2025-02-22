@@ -7,7 +7,9 @@ local myutil = require "lualib.util"
 local M = {}
 
 local undo_info_to_be_attached = {}
-local tag_handlers = {} -- entity name --> custom handler action
+local tag_handlers = {} -- entity name --> custom handler action when tags are applied
+local paste_settings_handlers = {} -- entity name --> custom handler action(event) when settings pasted
+local died_handlers = {} -- entity name --> custom handler action when died
 
 local function my_storage()
     if not storage.tags_for_entities then
@@ -53,11 +55,6 @@ local function on_built(ev)
     elseif ev.entity and tag_handlers[ev.entity.name] then
         handle_tag_update(ev.entity)
     end
-end
-
-local function on_pre_build(ev)
-    -- TODO: add info for fast replace
-    -- TODO: apply ... something when pasting a blueprint over an entity
 end
 
 local function attach_undo_info(ev)
@@ -120,18 +117,24 @@ local function on_died(ev)
 end
 
 local function on_entity_settings_pasted(ev)
-    local old_tags = get_tags(ev.destination)
-    local new_tags = get_tags(ev.source)
-    if (old_tags or new_tags) and old_tags ~= new_tags then
-        -- game.print("Transfer tags: "..serpent.block(new_tags))
-        set_tags(ev.destination,new_tags)
-        handle_tag_update(ev.destination)
+    if not ev.source or not ev.destination then return end
+    if ev.source.name == ev.destination.name then
+        local old_tags = get_tags(ev.destination)
+        local new_tags = get_tags(ev.source)
+        if (old_tags or new_tags) and old_tags ~= new_tags then
+            set_tags(ev.destination,new_tags)
+            handle_tag_update(ev.destination)
+        end
+        add_undo_info(ev.player_index, ev.destination, "copy-entity-settings")
     end
-    add_undo_info(ev.player_index, ev.destination, "copy-entity-settings")
+    if paste_settings_handlers[ev.destination.name] then
+        paste_settings_handlers[ev.destination.name](ev)
+    end
 end
 
 local function on_undo_applied(ev)
     for _,action in ipairs(ev.actions) do
+        game.print("Undo applied, action= " .. serpent.line({action}) .. ", tags = " .. serpent.line(action.tags))
         if action.tags
             and action.tags.tagged_entity_undo
             and action.tags.tagged_entity_surface_index -- not stored in action I think?
@@ -146,6 +149,129 @@ local function on_undo_applied(ev)
     end
 end
 
+local function get_blueprint_center(blueprint)
+    -- based on get_blueprint_bounding_box in Bunshaman Modding Library
+
+    -- set up grid snapping
+    local snap = blueprint.blueprint_snap_to_grid
+    local snx,sny = 1,1
+    local sox,soy = 0,0
+    if snap then
+        snx,sny = blueprint.blueprint_snap_to_grid.x, blueprint.blueprint_snap_to_grid.y
+    end
+    if blueprint.blueprint_position_relative_to_grid then
+        sox,soy = blueprint.blueprint_position_relative_to_grid.x, blueprint.blueprint_position_relative_to_grid.y
+    end
+    local huge,min,max = math.huge,math.min,math.max
+    local epsilon = 0.000001
+    local minx,maxx,miny,maxy = huge,-huge,huge,-huge
+
+    local function cell_of(x,y)
+        if not snap then return x,y end
+        x=sox+math.floor((x-sox)/snx)*snx
+        y=soy+math.floor((x-soy)/sny)*sny
+        return x,y
+    end
+
+    for _, component in ipairs(blueprint.get_blueprint_entities() or {}) do
+        local selection_box = prototypes.entity[component.name].selection_box
+        local xlo,ylo = selection_box.left_top.x, selection_box.left_top.y
+        local xhi,yhi = selection_box.right_bottom.x, selection_box.right_bottom.y
+        local x,y = component.position.x,component.position.y
+
+        -- If a pasted entity is rotated, it will have its own extra direction
+        local entity_direction = component.direction
+        if entity_direction and entity_direction % 4 == 0 then
+            local xc,yc = (xlo+xhi)/2,(ylo+yhi)/2
+            while entity_direction >= 4 do
+                xlo,ylo,xhi,yhi = xc-(yhi-yc), yc-(xhi-xc), xc+(yhi-yc), yc+(xhi-xc)
+                entity_direction = entity_direction - 4     -- Rotate 90 degrees counter-clockwise
+            end
+        end
+        xlo,ylo = cell_of(x+xlo,y+ylo)
+        xhi,yhi = cell_of(x+xhi,y+yhi)
+        minx,maxx,miny,maxy = min(minx,xlo),max(maxx,xhi),min(miny,ylo),max(maxy,yhi)
+    end
+    for _, component in ipairs(blueprint.get_blueprint_tiles() or {}) do
+        local x,y = component.position.x,component.position.y
+        local xlo,ylo = cell_of(x+0.0001,y+0.0001)
+        local xhi,yhi = cell_of(x+0.9999,y+0.9999)
+        minx,maxx,miny,maxy = min(minx,xlo),max(maxx,xhi),min(miny,ylo),max(maxy,yhi)
+    end
+    return cell_of((minx+maxx)/2, (miny+maxy)/2) -- I guess?
+end
+
+local function get_transform_matrix(direction,flip_horizontal,flip_vertical)
+    local a,b,c,d = 1,0,0,1
+    while direction >= 4 do
+        a,b,c,d = -c,-d,a,b
+        direction=direction-4
+    end
+    if flip_horizontal then a,c = -a,-c end
+    if flip_vertical then b,d = -b,-d end
+    return a,b,c,d
+end
+
+local function apply_transform_matrix(a,b,c,d,x,y)
+    return a*x+b*y, c*x+d*y
+end
+
+local function on_pre_build(ev)
+    local player = game.get_player(ev.player_index)
+    if not player or not player.connected or not player.surface or not player.is_cursor_blueprint() then return end
+    local surface = player.surface
+    local blueprint = player.cursor_record or player.cursor_stack
+    local a,b,c,d = get_transform_matrix(ev.direction,ev.flip_horizontal,ev.flip_vertical)
+
+    if blueprint.type == "blueprint-book" then
+        if player.cursor_record then
+            blueprint = blueprint.contents[blueprint.get_active_index(player)]
+        else
+            blueprint = blueprint.get_inventory(defines.inventory.item_main)[blueprint.active_index]
+        end
+    end
+    if not blueprint or blueprint.type ~= "blueprint" then return end
+
+    local xc,yc = get_blueprint_center(blueprint)
+    local xxc,yyc = apply_transform_matrix(a,b,c,d,xc,yc)
+    local evx,evy = ev.position.x, ev.position.y
+
+    -- Apply snapping to grid.  If there is no grid, it has size 1x1 at position 0x0
+    local snx,sny = 1,1
+    local sox,soy = 0,0
+    if blueprint.blueprint_snap_to_grid then
+        snx,sny = blueprint.blueprint_snap_to_grid.x, blueprint.blueprint_snap_to_grid.y
+        if blueprint.blueprint_position_relative_to_grid then
+            sox,soy = blueprint.blueprint_position_relative_to_grid.x, blueprint.blueprint_position_relative_to_grid.y
+        end
+        snx,sny = apply_transform_matrix(a,b,c,d,snx,sny)
+        sox,soy = apply_transform_matrix(a,b,c,d,sox,soy)
+        snx,sny = math.abs(snx),math.abs(sny)
+
+        evx = snx*math.floor((evx-xxc-sox)/snx)+sox+xxc
+        evy = sny*math.floor((evy-yyc-soy)/sny)+soy+yyc
+    else
+        evx = math.floor(evx-xxc+0.5)+xxc
+        evy = math.floor(evy-yyc+0.5)+yyc
+    end
+
+    for idx,blue_ent in ipairs(blueprint.get_blueprint_entities()) do
+        local x,y = blue_ent.position.x-xc, blue_ent.position.y-yc
+        x,y = apply_transform_matrix(a,b,c,d,x,y)
+        x,y = evx+x, evy+y
+        -- game.print("Positions: " .. serpent.line({ev.position,{snx,sny},{sox,soy},{evx,evy},blue_ent.position,{xc,yc},{x,y}}))
+        for _,ent in ipairs(surface.find_entities_filtered{
+            area = {{x,y},{x,y}},
+            name = blue_ent.name
+         }) do
+            if ent.name == blue_ent.name and get_tags(ent) then
+                set_tags(ent, blue_ent.tags)
+                handle_tag_update(ent)
+            end
+        end
+    end
+end
+
 local function on_redo_applied(ev)
     on_undo_applied(ev)
 end
@@ -154,8 +280,7 @@ local function on_player_setup_blueprint(ev)
     -- Based loosely on code by Quezler
     -- from factoryplanner-is-exportable-to-fake-factorissimo
     local player = game.get_player(ev.player_index)
-    assert(player)
-    if not player.connected then return end
+    if not player or not player.connected then return end
   
     local blueprint = nil
 
@@ -172,8 +297,8 @@ local function on_player_setup_blueprint(ev)
     local sto = my_storage()
     for _, blueprint_entity in ipairs(blueprint_entities or {}) do
         local entity = mapping[blueprint_entity.entity_number]
-        if entity and sto[entity] then
-            blueprint.set_blueprint_entity_tags(blueprint_entity.entity_number, sto[entity])
+        if entity and sto[entity.unit_number] then
+            blueprint.set_blueprint_entity_tags(blueprint_entity.entity_number, sto[entity.unit_number])
         end
     end
 end
@@ -184,6 +309,7 @@ register_event(defines.events.on_player_mined_entity, on_player_mined_entity)
 register_event(defines.events.on_built_entity, on_built)
 register_event(defines.events.on_robot_built_entity, on_built)
 register_event(defines.events.on_built_entity, on_built)
+register_event(defines.events.on_pre_build, on_pre_build)
 register_event(defines.events.on_robot_built_entity, on_built)
 register_event(defines.events.on_marked_for_deconstruction, on_marked_for_deconstruction)
 register_event(defines.events.on_undo_applied, on_undo_applied)
@@ -197,4 +323,6 @@ M.set_tags = set_tags
 M.clear_tags = clear_tags
 M.add_undo_info = add_undo_info
 M.tag_handlers = tag_handlers
+M.paste_settings_handlers = paste_settings_handlers
+M.died_handlers = died_handlers
 return M

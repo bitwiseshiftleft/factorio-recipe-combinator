@@ -17,6 +17,13 @@ tagged_entity.tag_handlers["recipe-combinator-main"] = function(entity,tags)
     circuit.rebuild_combinator(entity)
 end
 
+tagged_entity.paste_settings_handlers["recipe-combinator-main"] = function(ev)
+    local entity = ev.destination
+    if not entity then return end
+    local control = entity.get_or_create_control_behavior()
+    control.parameters = {operation="+"}
+end
+
 local function on_undo_applied(ev)
     -- TODO: undo pasting settings
     game.print("Event TODO: undo applied")
