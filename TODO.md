@@ -1,15 +1,10 @@
 # TODO
 
-## Updating
-* Blocking: Update on mod config reload
-* Blocking: Update on techs researched ("if unlocked" and if tech unlocks recipes only)
-* Graceful upgrade with "defunct" combinators
-
 ## Copy-paste and all that
-* Blocking: Undo / redo support
-* Blocking: update GUI if someone pastes over the item
-* Blocking: diagnose rounding issues in blueprint pasting
+* Update GUI if someone pastes over the item
+* Fix rounding issues when copy-pasting a blueprint with grid coordinates
 * Add indicator inserters to blueprint?
+* Undo/redo paste settings
 
 ## GUI and features
 * Make "show all recipes" exclusive with other options?
@@ -18,10 +13,11 @@
 * Configurable: output all qualities when fluid output selected?
 
 ## Lua cleanup
-* Blocking: make sure we aren't leaving dead tags in storage, or hack it with garbage collection on load
+* Tighten up on_died to avoid leaving dead tags in storage (currently clean one tick after on_load anyway)
 * Separate circuit.lua from recipe combinator matrix logic
 
 ## Test
+* Blocking: test redo support
 * Blocking: Test test test
 * Blocking: Test again with no quality
 

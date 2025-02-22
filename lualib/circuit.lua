@@ -1,6 +1,7 @@
 local util = require "__core__.lualib.util"
 local tagged_entity = require "lualib.tagged_entity"
 local matrix_builder = require "lualib.matrix_builder"
+local event = require "lualib.event"
 local M = {}
 
 local band = bit32.band
@@ -515,11 +516,92 @@ local function build_sparse_matrix(args)
   end
 end
 
-local function destroy_components(entity)
-  -- Destroy recipe combinator components that are children of this item
-  -- FIXME seemingly doesn't give the combinator back
+local MAX_LATENCY = 10 -- for defunct vs destroy latency
+local DESC_DEFUNCT = "__defunct__"
+
+local function destroy_defunct_components(entity,defunct_tick)
   local children = entity.surface.find_entities_filtered{area=entity.bounding_box}
-  local undo_info = {}
+  local combinator_types = {
+    ["arithmetic-combinator"]=true,
+    ["decider-combinator"]=true,
+    ["selector-combinator"]=true,
+    ["constant-combinator"]=true
+  }
+  local descr = DESC_DEFUNCT .. tostring(defunct_tick)
+  for i,child in ipairs(children) do
+    if string.find(child.name, '^recipe%-combinator%-component%-')
+        and combinator_types[child.type] 
+        and child.unit_number ~= entity.unit_number
+        and child.combinator_description == descr
+    then
+      child.destroy()
+    end
+  end
+end
+
+local function check_defunction(ev)
+  local tick = ev.tick
+  local in_future = false
+  for a_tick,entities in pairs(table.deepcopy(storage.defunct)) do
+    if a_tick + MAX_LATENCY <= tick then
+      for _,un in ipairs(entities) do
+        local entity = game.get_entity_by_unit_number(un)
+        if entity then destroy_defunct_components(entity,a_tick) end
+      end
+      storage.defunct[a_tick] = nil
+    else
+      in_future = true
+    end
+  end
+  if not in_future then
+    event.unregister_event(defines.events.on_tick, check_defunction)
+  end
+end
+
+local function make_components_defunct(entity)
+  local children = entity.surface.find_entities_filtered{area=entity.bounding_box}
+  local combinator_types = {
+    ["arithmetic-combinator"]=true,
+    ["decider-combinator"]=true,
+    ["selector-combinator"]=true,
+    ["constant-combinator"]=true
+  }
+  local egreen = entity.get_wire_connector(IGREEN,true)
+  local ered   = entity.get_wire_connector(IRED,  true)
+  local descr = DESC_DEFUNCT .. tostring(game.tick)
+  local made_any_defunct = false
+  for i,child in ipairs(children) do
+      if string.find(child.name, '^recipe%-combinator%-component%-') then
+          if combinator_types[child.type] and child.unit_number ~= entity.unit_number then
+            -- just defunct it and disconnect it from the input
+            child.combinator_description = descr
+            child.get_wire_connector(IGREEN,true).disconnect_from(egreen)
+            child.get_wire_connector(IRED  ,true).disconnect_from(ered)
+            made_any_defunct = true
+          else
+            child.destroy()
+          end
+      end
+  end
+
+  -- register to delete the defunct entities later
+  if made_any_defunct then
+    if storage.defunct then
+      if storage.defunct[game.tick] then
+        table.insert(storage.defunct[game.tick],entity.unit_number)
+      else 
+        storage.defunct[game.tick] = {entity.unit_number}
+      end
+    else
+      storage.defunct = {[game.tick]={entity.unit_number}}
+    end
+    event.register_event(defines.events.on_tick,check_defunction)
+  end
+end
+
+
+local function destroy_components(entity)
+  local children = entity.surface.find_entities_filtered{area=entity.bounding_box}
   for i,child in ipairs(children) do
       if string.find(child.name, '^recipe%-combinator%-component%-') then
           child.destroy()
@@ -722,7 +804,7 @@ local function build_recipe_info_combinator(args)
     (one_module_per_category and g_modules_per_category) or g_all_modules
   ) or {}
 
-  destroy_components(entity)
+  make_components_defunct(entity)
   local matrix = matrix_builder.MatrixBuilder:new()
 
   -- Set the entity's control info
@@ -809,7 +891,7 @@ local function build_recipe_info_combinator(args)
     for name,recipe in pairs(recipes) do
       local suitable =
         string.find(name,"^parameter%-%d$") == nil
-        and (is_spoilage or include_disabled or force.recipes[name])
+        and (is_spoilage or include_disabled or force.recipes[name].enabled)
         and (include_hidden or not recipe.hidden)
       if suitable then
         local sig = is_spoilage and {type="item",name=recipe.ingredients[1].name}

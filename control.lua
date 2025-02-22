@@ -24,16 +24,6 @@ tagged_entity.paste_settings_handlers["recipe-combinator-main"] = function(ev)
     control.parameters = {operation="+"}
 end
 
-local function on_undo_applied(ev)
-    -- TODO: undo pasting settings
-    game.print("Event TODO: undo applied")
-end
-
-local function on_marked_for_deconstruction(ev)
-    -- TODO: save undo info
-    game.print("Event TODO: Marked for deconstruction")
-end
-
 local function on_died(ev, mined_by_robot)
     local entity = ev.entity or ev.ghost
     -- TODO: save undo information so that we can rebuild it
@@ -48,6 +38,7 @@ local function on_died(ev, mined_by_robot)
             end
         end
     end
+    tagged_entity.clear_tags(ev.entity)
 end
 
 local function on_gui_opened(ev)
@@ -76,8 +67,22 @@ local function on_gui_closed(ev)
     end
 end
 
-local filters = {{filter="name", name="recipe-combinator-main"}}
+local function rebuild_limited_combinators(force)
+    for u,tags in pairs(tagged_entity.my_storage()) do
+        if tags["include_disabled"] == false then
+            local entity = game.get_entity_by_unit_number(u)
+            if entity then circuit.rebuild_combinator(entity) end
+        end
+    end
+    event.unregister_event(defines.events.on_tick, rebuild_limited_combinators)
+end
+
 local register_event = event.register_event
+local function on_research_finished(ev)
+    register_event(defines.events.on_tick, rebuild_limited_combinators)
+end
+
+local filters = {{filter="name", name="recipe-combinator-main"}}
 
 register_event(defines.events.on_entity_died, on_died, filters)
 register_event(defines.events.on_player_mined_entity, on_died, filters)
@@ -87,4 +92,6 @@ register_event(defines.events.script_raised_destroy, on_died, filters)
 
 register_event(defines.events.on_gui_opened, on_gui_opened)
 register_event(defines.events.on_gui_closed, on_gui_closed)
+register_event(defines.events.on_research_finished, on_research_finished)
+register_event(defines.events.on_technology_effects_reset, on_research_finished)
 -- register_event(defines.events.on_player_rotated_entity, on_rotated)

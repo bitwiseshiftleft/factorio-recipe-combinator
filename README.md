@@ -11,3 +11,8 @@ Features:
 * Outputs can be on red or green wires, and can be optionally negated or multiplied by the input.
 * Supports quality.
 * Partially supports getting info on spoilage time and products.
+
+Known issues:
+
+* No undo/redo support.
+* When changing combinator settings by pasting a blueprint over them, if the blueprint snaps to a grid, then the affected entities are not always calculated correctly.

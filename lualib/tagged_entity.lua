@@ -18,6 +18,20 @@ local function my_storage()
     return storage.tags_for_entities
 end
 
+local function garbage_collect_tags()
+    local sto = my_storage()
+    for u,_ in pairs(table.deepcopy(sto)) do
+        if not game.get_entity_by_unit_number(u) then
+            sto[u] = nil
+        end
+    end
+    event.unregister_event(defines.events.on_tick, garbage_collect_tags)
+end
+
+local function on_load()
+    event.register_event(defines.events.on_tick, garbage_collect_tags)
+end
+
 local function get_tags_mutable(entity)
     local sto = my_storage()
     if entity.tags then return entity.tags end
@@ -35,9 +49,10 @@ local function set_tags(entity, tags)
 end
 
 local function clear_tags(entity)
+    if not entity then return end
     local sto = my_storage()
     if sto[entity.unit_number] then
-        table.remove(sto, entity.unit_number)
+        sto[entity.unit_number] = nil
     end
     if entity.tags then entity.tags = nil end
 end
@@ -46,6 +61,13 @@ local function handle_tag_update(entity)
     -- Apply a custom function 
     if not entity or not entity.name or not tag_handlers[entity.name] then return end
     return tag_handlers[entity.name](entity, get_tags(entity))
+end
+
+local function on_configuration_changed()
+    local sto = my_storage()
+    for u,_ in pairs(table.deepcopy(sto)) do
+        handle_tag_update(game.get_entity_by_unit_number(u))
+    end
 end
 
 local function on_built(ev)
@@ -62,11 +84,9 @@ local function attach_undo_info(ev)
     -- Did it in the editor and there aren't any ticks?
     -- Currently, you're out of luck (TODO)
     for undoer,info in pairs(undo_info_to_be_attached) do
-        local playerid,action,name,surface,surface_index,position,found =
+        local playerid,action,name,surface_index,position,found =
             undoer[1],undoer[2],undoer[3],undoer[4],undoer[5],false
         local stack = (game.players[playerid] or {}).undo_redo_stack
-
-        -- game.print("Adding undo information: "..serpent.line(info))
         for idx = 1,stack.get_undo_item_count() do
             local item = stack.get_undo_item(idx)
             for jdx,subitem in ipairs(item) do
@@ -91,6 +111,7 @@ end
 
 local function add_undo_info(player_index, entity, action, undo_info)
     -- Adds the given undo_info, which must be a string -> AnyBasic table, to the given entity
+    -- log("Add undo info to entity " .. tostring(entity.unit_number) .. ": " .. serpent.line(undo_info))
     undo_info_to_be_attached[{player_index, action, myutil.name_or_ghost_name(entity), entity.surface.index, entity.position}] = undo_info
     event.register_event(defines.events.on_tick, attach_undo_info) -- to fire next tick
 end
@@ -134,15 +155,16 @@ end
 
 local function on_undo_applied(ev)
     for _,action in ipairs(ev.actions) do
-        game.print("Undo applied, action= " .. serpent.line({action}) .. ", tags = " .. serpent.line(action.tags))
+        -- log("Undo applied, action= " .. serpent.line({action}) .. ", tags = " .. serpent.line(action.tags))
         if action.tags
             and action.tags.tagged_entity_undo
             and action.tags.tagged_entity_surface_index -- not stored in action I think?
         then
+            local bpe = action.target
             local surface = game.surfaces[action.tags.tagged_entity_surface_index]
             if surface then
                 local entity = myutil.find_entity_or_ghost(surface,bpe.name,bpe.position)
-                entity.set_tags(action.tags.tagged_entity_undo)
+                set_tags(entity, action.tags.tagged_entity_undo)
                 handle_tag_update(entity)
             end
         end
@@ -317,6 +339,9 @@ register_event(defines.events.on_redo_applied, on_redo_applied)
 register_event(defines.events.on_player_setup_blueprint, on_player_setup_blueprint)
 register_event(defines.events.on_entity_settings_pasted, on_entity_settings_pasted)
 
+script.on_configuration_changed(on_configuration_changed)
+script.on_load(on_load)
+
 M.get_tags_mutable = get_tags_mutable
 M.get_tags = get_tags
 M.set_tags = set_tags
@@ -325,4 +350,5 @@ M.add_undo_info = add_undo_info
 M.tag_handlers = tag_handlers
 M.paste_settings_handlers = paste_settings_handlers
 M.died_handlers = died_handlers
+M.my_storage = my_storage
 return M
