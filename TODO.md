@@ -1,5 +1,6 @@
 # TODO
 
+
 ## Copy-paste and all that
 * Update GUI if someone pastes over the item
 * Fix rounding issues when copy-pasting a blueprint with grid coordinates
@@ -12,6 +13,7 @@
 * Could in theory do ranged right-alias support e.g. select (i,j=i+1) or whatever from one combinator and have i<=x<=j instead of i=x.  In particular this would allow "x at only normal quality" vs "x at all qualities" on adjacent indices.
 * Configurable: output all qualities when fluid output selected?
 * Hide quality things if not HAVE_QUALITY
+* Consider a flag for round up/down
 
 ## Lua cleanup
 * Tighten up on_died to avoid leaving dead tags in storage (currently clean one tick after on_load anyway)
@@ -33,6 +35,8 @@
 
 ## Speculative future features
 * Deal with spoilage time increases from quality
+* Make power consumption real?
+* Give info about allowed fuels, or burnt fuel results.
 * Deal with probabilities
 * Deal with productivity bonuses (either inherent in the machine or with modules)
 * Better graphics

@@ -34,6 +34,9 @@ local FLAG_RED,FLAG_GREEN = 16,32
 -- This flag doesn't stay in the flags field: it gets applied immediately
 local FLAG_NEGATE         = 1024
 
+-- FLAG_MEANINGLESS: doesn't mean anything, useful for separating rows with different divisors.
+local FLAG_MEANINGLESS    = 2048
+
 local MatrixBuilderRow = {}
 function MatrixBuilderRow:new(signal)
   local o = { signal = signal, subrows_by_flags = {} }
@@ -42,7 +45,9 @@ function MatrixBuilderRow:new(signal)
   return o
 end
 
-function MatrixBuilderRow:set_entry(output_signal,value,flags,add)
+function MatrixBuilderRow:set_entry(output_signal,value,flags,add,divider)
+    divider = divider or 1
+    if band(flags,FLAG_MULTIPLY) == 0 then divider = 1 end
     value = value or 1
     flags = flags or 0
     if band(flags, FLAG_NEGATE) > 0 then
@@ -50,16 +55,28 @@ function MatrixBuilderRow:set_entry(output_signal,value,flags,add)
         value = -value
     end
     local sigstr = output_signal.type .. ":" .. output_signal.name
-    local subrow = self.subrows_by_flags[flags]
-    if not subrow then
-        subrow = {}
-        self.subrows_by_flags[flags] = subrow
-    end
-    if subrow[sigstr] then
-        if add then value = value + subrow[sigstr][2] end
-        subrow[sigstr][2] = value
-    else
-        subrow[sigstr] = {output_signal,value}
+    while true do
+        local subrow = self.subrows_by_flags[flags]
+        if not subrow then
+            subrow = {}
+            self.subrows_by_flags[flags] = subrow
+        end
+        if subrow[sigstr] then
+            if add and subrow[sigstr][3] ~= divider then
+                flags = flags + FLAG_MEANINGLESS
+                -- continue
+            elseif add then
+                subrow[sigstr][2] = value + subrow[sigstr][2]
+                return
+            else
+                subrow[sigstr][2] = value
+                subrow[sigstr][3] = divider
+                return
+            end
+        else
+            subrow[sigstr] = {output_signal,value,divider}
+            return
+        end
     end
 end
 
@@ -73,27 +90,35 @@ function MatrixBuilderRow:copy()
     return ret
 end
 
-function MatrixBuilderRow:add_copy_with_flag_change(other,or_flags,multiplier)
+function MatrixBuilderRow:add_copy_with_flag_change(other,or_flags,multiplier,divider)
     -- self += multiplier * other, but shift entries of other by ORing their flags with or_flags
     or_flags = or_flags or 0
     multiplier = multiplier or 1
+    divider = divider or 1
     if band(or_flags, FLAG_NEGATE) > 0 then
         or_flags = or_flags - flag_negate
         multiplier = -multiplier
     end
     for flags,subrow in pairs(other.subrows_by_flags) do
         local new_flags = bor(flags,or_flags)
-        if self.subrows_by_flags[new_flags] then
-            local target = self.subrows_by_flags[new_flags]
-            for sigstr,sigvals in pairs(subrow) do
-                if target[sigstr] then
+        local new_divider = (band(new_flags, FLAG_MULTIPLY) ~= 0 and divider) or 1
+        local target = self.subrows_by_flags[new_flags]
+        if not target then
+            target = {}
+            self.subrows_by_flags[new_flags] = target
+        end
+        for sigstr,sigvals in pairs(subrow) do
+            if target[sigstr] then
+                if target[sigstr][3] == new_divider or band(new_flags, FLAG_MULTIPLY) == 0 then
+                    -- consistent dividers, just add
                     target[sigstr][2] = target[sigstr][2] + multiplier * sigvals[2]
                 else
-                    target[sigstr] = {sigvals[1],  multiplier * sigvals[2]}
+                    -- inconsistent dividers: add with arbitrary flag
+                    self:set_entry(sigvals[1],multiplier*sigvals[2],new_flags,true,new_divider)
                 end
+            else
+                target[sigstr] = {sigvals[1],  multiplier * sigvals[2], new_divider}
             end
-        else
-            self.subrows_by_flags[new_flags] = table.deepcopy(subrow)
         end
     end
 end
@@ -189,6 +214,7 @@ M.FLAG_NORMAL_INPUT  = FLAG_NORMAL_INPUT
 M.FLAG_RED           = FLAG_RED
 M.FLAG_GREEN         = FLAG_GREEN
 M.FLAG_NEGATE        = FLAG_NEGATE
+M.FLAG_MEANINGLESS   = FLAG_MEANINGLESS
 M.MAKE_VALID_ANYWAY  = MAKE_VALID_ANYWAY
 M.MatrixBuilder      = MatrixBuilder
 

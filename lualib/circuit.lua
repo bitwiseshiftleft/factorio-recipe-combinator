@@ -42,6 +42,7 @@ local FLAG_NORMAL_INPUT = matrix_builder.FLAG_NORMAL_INPUT
 local FLAG_MULTIPLY     = matrix_builder.FLAG_MULTIPLY
 local FLAG_NOQUAL       = matrix_builder.FLAG_NOQUAL
 local FLAG_NEGATE       = matrix_builder.FLAG_NEGATE
+local FLAG_MEANINGLESS  = matrix_builder.FLAG_MEANINGLESS
 
 -- When used as a builder interface, takes input from itself
 local ITSELF = "__ITSELF__"
@@ -368,6 +369,21 @@ local function init()
   cache_spoilage()
 end
 
+local function signal_arrays_equal(t1,t2)
+  if t1 == nil and t2 == nil then return true end
+  if t1 == nil or t2 == nil then return false end
+  if #t1 ~= #t2 then return false end
+  for i=1,#t1 do
+    if t1[i][1].type ~= t2[i][1].type
+      or t1[i][1].name ~= t2[i][1].name
+      or t1[i][2] ~= t2[i][2] then
+        return false
+      end
+  end
+  return true
+end
+
+
 local function build_sparse_matrix(args)
   -- given an input of the form
   -- {sig1, {{sig1a,4}, {sig1b,123}}} or similar
@@ -381,17 +397,23 @@ local function build_sparse_matrix(args)
   local builder,input,rows=args.builder,args.input,args.rows
   local prefix=args.prefix or "sparse_matrix."
   local flags_only,multiply_by_input = args.flags_only,args.multiply_by_input
-  local entry_data,idx_data,idx_dict = {},{},{}
+  local entry_data,divider_data,idx_data,idx_dict = {},{},{},{}
   local columns,jdx_dict,jdx_data,jdx_count = {},{},{},{}
-  local rowsig,combo,entry,colsig,jdx_value
+  local rowsig,combo,entry,divider,colsig,jdx_value
+  local round_up = args.round_up
+  local dividers_not_all_one = {}
 
   for _idx,row in ipairs(rows) do
     rowsig,combo = row[1],row[2]
+
     -- game.print(serpent.line(rowsig) .. ": " .. serpent.line(combo))
     local rowsig_str = rowsig.type .. ":" .. rowsig.name
     for layer,col in ipairs(combo) do
       -- "layer" meaning index of ingredient within the combo
-      colsig,entry = col[1],col[2]
+      colsig,entry,divider = col[1],col[2],col[3]
+      divider = divider or 1
+      if multiply_by_input and divider ~= 1 then dividers_not_all_one[layer] = true end
+
       local colsig_str = colsig.type .. ":" .. colsig.name
 
       if not idx_data[layer] then
@@ -401,6 +423,7 @@ local function build_sparse_matrix(args)
         jdx_dict[layer] = {}
         idx_dict[layer] = {}
         entry_data[layer] = {}
+        divider_data[layer] = {}
         jdx_count[layer] = 0
       end
       if not jdx_dict[layer][colsig_str] then
@@ -415,23 +438,57 @@ local function build_sparse_matrix(args)
       idx_dict[layer][rowsig_str] = jdx_value
       if not flags_only then
         table.insert(entry_data[layer], {rowsig,entry})
+        table.insert(divider_data[layer], {rowsig,divider})
       end
     end
   end
 
-  -- TODO: make sure it can't be in input
+  -- any point in creating buf_input?
+  local any_dividers_all_one = false
+  for layer = 1,#idx_data do
+    if not dividers_not_all_one[layer] then
+      any_dividers_all_one = true
+      break
+    end
+  end
+
+  round_up = (not dividers_all_one) and round_up
+
+  -- TODO: make sure this can't be in input
   local idx_signal = {type="virtual", name="signal-info"}
 
+  local prev_div_input,prev_mod_input
+  local dividers_prev
+
   -- Build the combinators
-  -- First, 1-cycle input buffer
+  -- First, 1-cycle input buffer.  Perform div and/or mod here
   local buf_input
-  if not flags_only then
+  if not flags_only and any_dividers_all_one then
     buf_input = builder:arithmetic{L=EACH,op="+",R=0,description=prefix.."buf",green={input}}
   end
   local first_output = nil
   for layer = 1,#idx_data do
     local idx_combi = builder:constant_combi(idx_data[layer],   prefix.."idx"..tostring(layer))
     local jdx_combi = builder:constant_combi(jdx_data[layer],   prefix.."jdx"..tostring(layer))
+
+    local my_buf_input, mod_input
+
+    -- divider if necessary
+    if dividers_not_all_one[layer] and signal_arrays_equal(divider_data[layer],dividers_prev) then
+      -- ... preferably from the cache
+      my_buf_input,mod_input = prev_div_input,prev_mod_input
+    elseif dividers_not_all_one[layer]  then
+      local dividends = builder:constant_combi(divider_data[layer], prefix.."divctx"..tostring(layer))
+      my_buf_input = builder:arithmetic{NL=NGREEN,L=EACH,op="/",NR=NRED,R=EACH,description=prefix.."div"..tostring(layer),
+        green={input}, red={dividends}}
+      if round_up then
+        mod_input = builder:arithmetic{NL=NGREEN,L=EACH,op="%",NR=NRED,R=EACH,description=prefix.."mod"..tostring(layer),
+          green={input}, red={dividends}}
+      end
+      prev_div_input,prev_mod_input,dividers_prev = my_buf_input,mod_input,divider_data
+    else
+      my_buf_input = buf_input
+    end
 
     -- idx != 0 and input != 0 ==> idx_signal = idx value
     local get_idx = builder:decider{
@@ -472,9 +529,22 @@ local function build_sparse_matrix(args)
         dotp = builder:arithmetic{
           L=EACH,NL=NGREEN,op="*",R=EACH,NR=NRED,
           out=idx_signal,
-          green = {buf_input}, red = {ent_combi},
+          green = {my_buf_input}, red = {ent_combi},
           description=prefix.."dotp"..tostring(layer)
         }
+        if mod_input then
+          -- add round-up combinator: if input % divider != 0 then +1 * dot
+          local rucomb = builder:decider{
+            decisions = {
+              {L=EACH,NL=NGREEN,op="!=",R=0},
+              {and_=true,L=EACH,NL=NRED,op="!=",R=0}
+            },
+            output = {{out=idx_signal,WO=NRED}},
+            green = {mod_input}, red = {ent_combi},
+            description=prefix.."rup"..tostring(layer)
+          }
+          rucomb.get_wire_connector(ORED,true).connect_to(dotp.get_wire_connector(ORED,true))
+        end
       else
         dotp = builder:decider{
           decisions = {
@@ -482,7 +552,7 @@ local function build_sparse_matrix(args)
             {and_=true,L=EACH,NL=NRED,op="!=",R=0}
           },
           output = {{out=idx_signal,WO=NRED}},
-          green = {buf_input}, red = {ent_combi},
+          green = {my_buf_input}, red = {ent_combi},
           description=prefix.."dotp"..tostring(layer)
         }
       end
@@ -740,7 +810,8 @@ local function build_matrix_combinator(
     else 
       connect_output(build_sparse_matrix{
         builder=builder,input=input,rows=matrix,prefix="ri.matrix.flags"..tonumber(flags)..".",
-        multiply_by_input=band(flags,FLAG_MULTIPLY)>0,use_qual=use_qual
+        multiply_by_input=band(flags,FLAG_MULTIPLY)>0,use_qual=use_qual,
+        round_up=true -- TODO
       },flags)
       -- game.print("Build sparse matrix with "..tonumber(#matrix).." rows with flags="..tonumber(flags))
     end
@@ -870,11 +941,13 @@ local function build_recipe_info_combinator(args)
     end
   end
 
-  local function index_by_item(row,item,flag_all_fluid,output_all_recipes)
+  local function index_by_item(row,item,flag_all_fluid,output_all_recipes,divider)
     -- Add a copy of row, but indexed by the item instead
     local item_sig = {type=item.type, name=item.name}
     local fluid = (item.type == "fluid") and FLAG_NORMAL_INPUT or flag_all_fluid
     local row2 = matrix:create_or_add_row(item_sig)
+
+    divider = divider or 1
 
     local has_normal_qual,has_all_qual = false,false
     for flags,_ in pairs(row2.subrows_by_flags) do
@@ -886,7 +959,7 @@ local function build_recipe_info_combinator(args)
     end
     if not has_all_qual and not has_normal_qual then
       -- not seen before, add recipe info
-      row2:add_copy_with_flag_change(row,fluid)
+      row2:add_copy_with_flag_change(row,fluid,1,divider)
     elseif flag_all_fluid==0 and not has_all_qual then
       -- seen before but only as a fluid-input recipe
       -- e.g. steel plates in space age, with foundry taking priority over furnace
@@ -894,10 +967,10 @@ local function build_recipe_info_combinator(args)
       --   If the user enters quality steel plate, they should get a furnace recipe instead
       
       -- Add a copy of this row ...
-      row2:add_copy_with_flag_change(row,0)
+      row2:add_copy_with_flag_change(row,0,1,divider)
 
       -- .. but for the case where the input is normal, subtract this row, canceling it out
-      row2:add_copy_with_flag_change(row,FLAG_NORMAL_INPUT,-1)
+      row2:add_copy_with_flag_change(row,FLAG_NORMAL_INPUT,-1,divider)
     end
     if output_all_recipes then
       row2:set_entry(row.signal,1,bor(output_all_recipes,fluid),true)
@@ -1004,13 +1077,15 @@ local function build_recipe_info_combinator(args)
         if input_recipe_ingredients then
           for idx=1,#ingredients do
             local fluid = (ingredients[idx].type == "fluid") and FLAG_NORMAL_INPUT or flag_all_fluid
-            index_by_item(row,ingredients[idx],fluid,output_all_recipes)
+            index_by_item(row,ingredients[idx],fluid,output_all_recipes,ingredients[idx].amount)
           end
         end
         if input_recipe_products then
           for idx=1,#products do
-            local fluid = (products[idx].type == "fluid") and FLAG_NORMAL_INPUT or flag_all_fluid
-            index_by_item(row,products[idx],fluid,output_all_recipes)
+            local product = products[idx]
+            local fluid = (product.type == "fluid") and FLAG_NORMAL_INPUT or flag_all_fluid
+            local amt = product.amount or (product.amount_min + product.amount_max)/2
+            index_by_item(row,product,fluid,output_all_recipes,amt)
           end
         end
       end
