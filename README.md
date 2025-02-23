@@ -18,3 +18,6 @@ Features:
 Known issues:
 
 * When changing combinator settings by pasting a blueprint over them, if the blueprint snaps to a grid, then the affected entities are not always calculated correctly.
+* When asking for all recipes that produce a normal fluid output, only normal-quality recipes are shown.  This should probably be the default behavior anyway, but maybe there should be a checkbox to show all qualities.
+* The combinator's calculations do not take productivity (whether from the machine, modules or research) into account.
+* The combinator's calculations do not take randomized outputs into account.

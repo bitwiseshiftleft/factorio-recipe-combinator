@@ -277,7 +277,7 @@ local function on_pre_build(ev)
         evy = math.floor(evy-yyc+0.5)+yyc
     end
 
-    for idx,blue_ent in ipairs(blueprint.get_blueprint_entities()) do
+    for idx,blue_ent in ipairs(blueprint.get_blueprint_entities() or {}) do
         local x,y = blue_ent.position.x-xc, blue_ent.position.y-yc
         x,y = apply_transform_matrix(a,b,c,d,x,y)
         x,y = evx+x, evy+y
