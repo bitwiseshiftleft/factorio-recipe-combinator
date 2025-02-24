@@ -1,4 +1,17 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.1.1
+Date: 2025-02-24
+
+  Even more GUI options!  It should have a dropdown, but it doesn't.
+
+  When given an item, the "multiply" flag divides by input/output quantity, rounding up
+  Can multiply "show all recipes" output
+  Input is split between items and fluids
+  Can output just the quantity of the selected signal (so that you can immediately multiply)
+  Fix a crash when placing a blueprint with no entities
+  Fix a bug where "output selected signal" strips the quality
+
+---------------------------------------------------------------------------------------------------
 Version: 0.1
 Date: 2025-02-22
 

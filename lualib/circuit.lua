@@ -687,10 +687,11 @@ local function build_matrix_combinator(
   output_quality_flags,
   output_selected_signal,
   output_all_inputs,
-  output_all_inputs_quality
+  output_all_inputs_quality,
+  output_quantity_sig,
+  output_quantity_flags
 )
   local builder = Builder:new(entity.surface, entity.position, entity.force)
-
 
   -- Collate the matrix into a dense form
   local matrices_by_flags, valid, valid_at_all_qualities = matrix:collate()
@@ -704,6 +705,7 @@ local function build_matrix_combinator(
   local end_of_input_stage
   local valid_combi
   local quality_buffer
+  local selected_signal
   local end_of_input_stage_normal_only
   if HAVE_QUALITY then
     local valid2,nvalid2 = {},0
@@ -752,6 +754,17 @@ local function build_matrix_combinator(
       green={select_one}, description="ri.set_normal_qual",
     }
 
+    -- Stage 3d selected signal (original quality)
+    if output_selected_signal then
+      selected_signal = builder:arithmetic{
+        L=EACH,op="+",R=0,green={select_one},
+        description="ri.selected_signal"
+      }
+    else
+      -- in case it's needed for quantity
+      selected_signal = end_of_input_stage
+    end
+
     -- Stage 3b extract if normal quality
     -- TODO: only create if necessory
     end_of_input_stage_normal_only = builder:selector{
@@ -767,6 +780,7 @@ local function build_matrix_combinator(
       -- visible=true
     }
   else
+    -- No quality
     -- Stage 2: selection of one valid input
     valid_combi = builder:constant_combi(valid, "ri.valid")
     local select_one = builder:decider{
@@ -779,6 +793,7 @@ local function build_matrix_combinator(
     }
     -- Stage 3: buffer again (for parity with quality case)
     end_of_input_stage = builder:arithmetic{L=EACH,op="+",R=0,description="ri.buffer3",green={select_one}}
+    selected_signal = end_of_input_stage
   end
 
   -- widget to connect combi's output to the main entity
@@ -862,12 +877,22 @@ local function build_matrix_combinator(
     connect_output(prev,output_all_inputs)
   end
 
-  -- output selected signal
-  if output_selected_signal and output_selected_signal > 0 then
-    local sel4 = builder:arithmetic{L=EACH,op="+",R=0,green={end_of_input_stage},description="ri.matrix.input_buffer_4"}
+  -- output selected signal (possibly quantity only)
+  if (output_selected_signal and output_selected_signal > 0)
+    or (output_quantity_sig and output_quantity_flags and output_quantity_flags > 0)
+  then
+    local sel4 = builder:arithmetic{L=EACH,op="+",R=0,green={selected_signal},description="ri.matrix.input_buffer_4"}
     local sel5 = builder:arithmetic{L=EACH,op="+",R=0,green={sel4},description="ri.matrix.input_buffer_5"}
-    local sel6 = builder:arithmetic{L=EACH,op="+",R=0,green={sel5},description="ri.matrix.input_buffer_6"}
-    connect_output(sel6,output_selected_signal)
+    if output_quantity_sig and output_quantity_flags and output_quantity_flags > 0 then
+      local seln = builder:arithmetic{L=EACH,op="+",R=0,
+        out=output_quantity_sig,green={sel5},
+        description="ri.matrix.output_quantity"}
+      connect_output(seln,output_quantity_flags)
+    end
+    if output_selected_signal and output_selected_signal > 0 then
+      local sel6 = builder:arithmetic{L=EACH,op="+",R=0,green={sel5},description="ri.matrix.input_buffer_6"}
+      connect_output(sel6,output_selected_signal)
+    end
   end
 end
 
@@ -887,6 +912,8 @@ local function build_recipe_info_combinator(args)
   local output_crafting_machine   = args.output_crafting_machine
   local output_quality_sig        = args.output_quality_sig
   local output_quality            = args.output_quality
+  local output_quantity_sig       = args.output_quantity_sig
+  local output_quantity_flags     = args.output_quantity
   local output_selected           = args.output_selected
   local one_module_per_category   = args.one_module_per_category
   local output_all_inputs         = args.output_all_inputs
@@ -1102,16 +1129,20 @@ local function build_recipe_info_combinator(args)
 
   -- go go go!
   build_matrix_combinator(entity, matrix, output_quality_sig,
-    output_quality, output_selected, output_all_inputs, output_all_inputs_quality)
+    output_quality, output_selected, output_all_inputs, output_all_inputs_quality,
+    output_quantity_sig, output_quantity_flags)
 end
 
 local DEFAULT_ROLLUP = {
   machines = {"assembling-machine-3"},
   input_recipe = false,
-  input_item_ingredient = false,
-  input_item_product = true,
+  input_ingredient_group = true,
+  input_item_ingredient = true,
   input_fluid_ingredient = false,
+  input_product_group = false,
+  input_item_product = true,
   input_fluid_product = false,
+  
   include_disabled = false,
   include_hidden = false,
   show_ingredients = true,
@@ -1135,6 +1166,11 @@ local DEFAULT_ROLLUP = {
 
   show_quality = false,
   show_quality_signal = {type="virtual",name="signal-Q"},
+  show_quality_red = true,
+  show_quality_green = true,
+
+  show_quantity = false,
+  show_quantity_signal = {type="virtual",name="signal-N"},
   show_quality_red = true,
   show_quality_green = true,
 
@@ -1182,10 +1218,10 @@ local function rollup_state_to_build_args(entity, rollup)
     include_disabled            = ru.include_disabled,
     include_hidden              = ru.include_hidden,
     
-    input_item_product          = ru.input_item_product,
-    input_item_ingredient       = ru.input_item_ingredient,
-    input_fluid_product         = ru.input_fluid_product,
-    input_fluid_ingredient      = ru.input_fluid_ingredient,
+    input_item_product          = ru.input_product_group and ru.input_item_product,
+    input_fluid_product         = ru.input_product_group and ru.input_fluid_product,
+    input_item_ingredient       = ru.input_ingredient_group and ru.input_item_ingredient,
+    input_fluid_ingredient      = ru.input_ingredient_group and ru.input_fluid_ingredient,
     input_recipe                = ru.input_recipe,
 
     one_module_per_category     = ru.show_modules_opc,
@@ -1220,6 +1256,10 @@ local function rollup_state_to_build_args(entity, rollup)
     output_all_inputs        =
       rollup_flags(ru.show_all_valid_inputs,false,false,
         ru.show_all_valid_inputs_red, ru.show_all_valid_inputs_green),
+    output_quantity        =
+      rollup_flags(ru.show_quantity,false,false,
+        ru.show_quantity_red, ru.show_quantity_green),
+    output_quantity_sig = ru.show_quantity and ru.show_quantity_signal,
     output_all_inputs_quality = ru.show_all_valid_inputs_quality,
 
     output_crafting_time_sig    = rollup.show_time and rollup.show_time_signal

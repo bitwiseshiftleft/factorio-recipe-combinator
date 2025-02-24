@@ -187,7 +187,7 @@ local function checkbox_row(args)
   local enabled = args.zone_enabled
   local load = args.load
   for _,box in ipairs(args.row or {}) do
-    if type(box) == string then
+    if type(box) == "string" then
       table.insert(boxes,{type="label", caption=box,enabled=enabled})
     elseif next(box) ~= nil then
       box2 = checkbox(box,load,enabled)
@@ -307,13 +307,22 @@ local function open(player_index, entity)
       {type="line", style="recipe-combinator_section_divider_line"},
       {type="label", caption={"recipe-combinator-gui.label_input"}, style="bold_label"},
       checkbox_row{row={
-        --{ type = "label", caption={"recipe-combinator-gui.index-row-caption"}, style="label"},
-        { name="input_recipe" },
+        { name="input_recipe", style=checkbox_header }
+      }, load=load},
+      checkbox_row{row={
+        { name="input_product_group", style=checkbox_header },
+        " ",
         { name="input_item_product" },
-        { name="input_fluid_product" },
+        " ",
+        { name="input_fluid_product" }
+      }, load=load},
+      checkbox_row{row={
+        { name="input_ingredient_group",style=checkbox_header },
+        " ",
         { name="input_item_ingredient" },
+        " ",
         { name="input_fluid_ingredient" }
-      }, all_enabled=true, load=load},
+      }, load=load},
 
       {type="line", style="recipe-combinator_section_divider_line"},
       {type="label", caption={"recipe-combinator-gui.label_recap"}, style="bold_label"},
@@ -324,6 +333,14 @@ local function open(player_index, entity)
         stretch,
         chk("show_selected","red"),
         chk("show_selected","green")
+      }, load=load},
+      checkbox_row{name="show_quantity_pane", row={
+        { name="show_quantity", style=checkbox_header },
+        tooltip("show_quantity"),
+        { name="show_quantity_signal", type = "choose-elem-button", style="recipe-combinator_signal_button", elem_type="signal" },
+        stretch,
+        chk("show_quantity","red"),
+        chk("show_quantity","green")
       }, load=load},
       (HAVE_QUALITY and checkbox_row{name="show_quality_pane", row={
         { name="show_quality", style=checkbox_header },
@@ -455,6 +472,7 @@ local function open(player_index, entity)
   if show_time_sig and sts_name and load and load[sts_name] then
     show_time_sig.elem_value = load[sts_name]
   end
+
   if HAVE_QUALITY then
     local show_quality_sig = main_window
       [prefix.."combi_config"]
@@ -463,6 +481,14 @@ local function open(player_index, entity)
     if show_quality_sig and sqs_name and load and load[sqs_name] then
       show_quality_sig.elem_value = load[sqs_name]
     end
+  end
+
+  local show_quantity_sig = main_window
+  [prefix.."combi_config"]
+  [prefix.."show_quantity_pane"][prefix.."show_quantity_signal"]
+  sqs_name = "show_quantity_signal"
+  if show_quantity_sig and sqs_name and load and load[sqs_name] then
+    show_quantity_sig.elem_value = load[sqs_name]
   end
 
   main_window.auto_center = true

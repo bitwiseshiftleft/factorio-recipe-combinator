@@ -1,4 +1,4 @@
-VERSION=0.1.0
+VERSION=0.1.1
 MODS_DIR="$(HOME)/Library/Application Support/factorio/mods"
 FILES= info.json changelog.txt *.lua prototypes lualib graphics locale README.md resources LICENSE
 

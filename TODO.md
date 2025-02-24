@@ -1,10 +1,5 @@
 # TODO
 
-* Blocking: "output selected signal" discards quality in some cases.
-* Consider: "output quantity of selected signal" = N.
-* Split item ingredient from fluid. **Implemented; test and rearrange GUI**
-* Multiply option for "output all recipes".  **Implemented; test**
-
 ## Copy-paste and all that
 * Update GUI if someone pastes over the item
 * Fix rounding issues when copy-pasting a blueprint with grid coordinates
@@ -16,10 +11,10 @@
 * Right-alias support in the matrix builder
 * Could in theory do ranged right-alias support e.g. select (i,j=i+1) or whatever from one combinator and have i<=x<=j instead of i=x.  In particular this would allow "x at only normal quality" vs "x at all qualities" on adjacent indices.
 * Configurable: output all qualities when fluid output selected?
-* Hide quality things if not HAVE_QUALITY
 * Consider a flag for round up/down.  Up is nicer though because you can't round up to 0
 * Or can you?  Test negative numbers too.
 * Paste-entity-settings from a machine to a combinator, to set that machine?
+* Add combinator description.
 
 ## Lua cleanup
 * Tighten up on_died to avoid leaving dead tags in storage (currently clean one tick after on_load anyway)
