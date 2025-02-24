@@ -536,7 +536,7 @@ local function build_sparse_matrix(args)
           -- add round-up combinator: if input % divider != 0 then +1 * dot
           local rucomb = builder:decider{
             decisions = {
-              {L=EACH,NL=NGREEN,op="!=",R=0},
+              {L=EACH,NL=NGREEN,op=">",R=0},
               {and_=true,L=EACH,NL=NRED,op="!=",R=0}
             },
             output = {{out=idx_signal,WO=NRED}},
