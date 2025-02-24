@@ -534,6 +534,10 @@ local function build_sparse_matrix(args)
         }
         if mod_input then
           -- add round-up combinator: if input % divider != 0 then +1 * dot
+          local nega_ent_combi = builder:arithmetic{
+            L=0,op="-",R=EACH,red={ent_combi},
+            description=prefix.."negent"..tostring(layer)
+          }
           local rucomb = builder:decider{
             decisions = {
               {L=EACH,NL=NGREEN,op=">",R=0},
@@ -541,6 +545,17 @@ local function build_sparse_matrix(args)
             },
             output = {{out=idx_signal,WO=NRED}},
             green = {mod_input}, red = {ent_combi},
+            description=prefix.."rup"..tostring(layer)
+          }
+          rucomb.get_wire_connector(ORED,true).connect_to(dotp.get_wire_connector(ORED,true))
+          -- and a negative one, rounding away from 0
+          rucomb = builder:decider{
+            decisions = {
+              {L=EACH,NL=NGREEN,op="<",R=0},
+              {and_=true,L=EACH,NL=NRED,op="!=",R=0}
+            },
+            output = {{out=idx_signal,WO=NRED}},
+            green = {mod_input}, red = {negent_combi},
             description=prefix.."rup"..tostring(layer)
           }
           rucomb.get_wire_connector(ORED,true).connect_to(dotp.get_wire_connector(ORED,true))
