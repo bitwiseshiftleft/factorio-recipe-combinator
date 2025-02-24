@@ -1,5 +1,9 @@
 # TODO
 
+* Blocking: "output selected signal" discards quality in some cases.
+* Consider: "output quantity of selected signal" = N.
+* Split item ingredient from fluid. **Implemented; test and rearrange GUI**
+* Multiply option for "output all recipes".  **Implemented; test**
 
 ## Copy-paste and all that
 * Update GUI if someone pastes over the item
@@ -38,6 +42,7 @@
 
 ## Speculative future features
 * Deal with spoilage time increases from quality
+* Allow to blacklist specific recipes
 * Make power consumption real?
 * Give info about allowed fuels, or burnt fuel results.
 * Deal with probabilities

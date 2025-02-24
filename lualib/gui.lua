@@ -308,9 +308,11 @@ local function open(player_index, entity)
       {type="label", caption={"recipe-combinator-gui.label_input"}, style="bold_label"},
       checkbox_row{row={
         --{ type = "label", caption={"recipe-combinator-gui.index-row-caption"}, style="label"},
-        { name="input_recipe",      state=true,caption={"recipe-combinator-gui.index_recipe"}},
-        { name="input_ingredients", state=false,caption={"recipe-combinator-gui.index_ingredient"}},
-        { name="input_product",     state=false,caption={"recipe-combinator-gui.index_product"}}
+        { name="input_recipe" },
+        { name="input_item_product" },
+        { name="input_fluid_product" },
+        { name="input_item_ingredient" },
+        { name="input_fluid_ingredient" }
       }, all_enabled=true, load=load},
 
       {type="line", style="recipe-combinator_section_divider_line"},
@@ -408,6 +410,8 @@ local function open(player_index, entity)
           { name="show_all_recipes", style=checkbox_header },
           -- tooltip("show_all_recipes"),
           stretch,
+          chk("show_all_recipes","neg"),
+          chk("show_all_recipes","ti"),
           chk("show_all_recipes","red"),
           chk("show_all_recipes","green")
         }, load=load}

@@ -892,8 +892,10 @@ local function build_recipe_info_combinator(args)
   local output_all_inputs         = args.output_all_inputs
   local output_all_inputs_quality = HAVE_QUALITY and args.output_all_inputs_quality
 
-  local input_recipe_products     = args.input_recipe_products
-  local input_recipe_ingredients  = args.input_recipe_ingredients
+  local input_item_product        = args.input_item_product
+  local input_item_ingredient     = args.input_item_ingredient
+  local input_fluid_product       = args.input_fluid_product
+  local input_fluid_ingredient    = args.input_fluid_ingredient
   local input_recipe              = args.input_recipe
   local include_hidden            = args.include_hidden
   local include_disabled          = args.include_disabled
@@ -973,7 +975,7 @@ local function build_recipe_info_combinator(args)
       row2:add_copy_with_flag_change(row,FLAG_NORMAL_INPUT,-1,divider)
     end
     if output_all_recipes then
-      row2:set_entry(row.signal,1,bor(output_all_recipes,fluid),true)
+      row2:set_entry(row.signal,1,bor(output_all_recipes,fluid),true,divider)
     end
   end
 
@@ -1074,18 +1076,24 @@ local function build_recipe_info_combinator(args)
           end
         end
 
-        if input_recipe_ingredients then
+        if input_item_ingredient or input_fluid_ingredient then
           for idx=1,#ingredients do
-            local fluid = (ingredients[idx].type == "fluid") and FLAG_NORMAL_INPUT or flag_all_fluid
-            index_by_item(row,ingredients[idx],fluid,output_all_recipes,ingredients[idx].amount)
+            local is_fluid = ingredients[idx].type == "fluid"
+            local fluid = is_fluid and FLAG_NORMAL_INPUT or flag_all_fluid
+            if (input_item_ingredient and not is_fluid) or (input_fluid_ingredient and is_fluid) then
+              index_by_item(row,ingredients[idx],fluid,output_all_recipes,ingredients[idx].amount)
+            end
           end
         end
-        if input_recipe_products then
+        if input_item_product or input_fluid_product then
           for idx=1,#products do
             local product = products[idx]
-            local fluid = (product.type == "fluid") and FLAG_NORMAL_INPUT or flag_all_fluid
+            local is_fluid = product.type == "fluid"
+            local fluid = is_fluid and FLAG_NORMAL_INPUT or flag_all_fluid
             local amt = product.amount or (product.amount_min + product.amount_max)/2
-            index_by_item(row,product,fluid,output_all_recipes,amt)
+            if (input_item_product and not is_fluid) or (input_fluid_product and is_fluid) then
+              index_by_item(row,product,fluid,output_all_recipes,amt)
+            end
           end
         end
       end
@@ -1100,8 +1108,10 @@ end
 local DEFAULT_ROLLUP = {
   machines = {"assembling-machine-3"},
   input_recipe = false,
-  input_ingredients = false,
-  input_product = true,
+  input_item_ingredient = false,
+  input_item_product = true,
+  input_fluid_ingredient = false,
+  input_fluid_product = false,
   include_disabled = false,
   include_hidden = false,
   show_ingredients = true,
@@ -1172,8 +1182,10 @@ local function rollup_state_to_build_args(entity, rollup)
     include_disabled            = ru.include_disabled,
     include_hidden              = ru.include_hidden,
     
-    input_recipe_products       = ru.input_product,
-    input_recipe_ingredients    = ru.input_ingredients,
+    input_item_product          = ru.input_item_product,
+    input_item_ingredient       = ru.input_item_ingredient,
+    input_fluid_product         = ru.input_fluid_product,
+    input_fluid_ingredient      = ru.input_fluid_ingredient,
     input_recipe                = ru.input_recipe,
 
     one_module_per_category     = ru.show_modules_opc,
@@ -1197,7 +1209,7 @@ local function rollup_state_to_build_args(entity, rollup)
       rollup_flags(ru.show_recipe,ru.show_recipe_ti,ru.show_recipe_neg,
         rollup.show_recipe_red, ru.show_recipe_green),
     output_all_recipes          =
-      rollup_flags(ru.show_all_recipes,false,false,
+      rollup_flags(ru.show_all_recipes,ru.show_all_recipes_ti,ru.show_all_recipes_neg,
         rollup.show_all_recipes_red, ru.show_all_recipes_green),
     output_crafting_machine     =
       rollup_flags(ru.show_machines,false,false,
