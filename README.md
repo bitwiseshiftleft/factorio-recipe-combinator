@@ -2,7 +2,7 @@
 
 This mod is intended for people who want to make automatic malls.  It adds a new type of combinator which gives a wealth of information about recipes.
 
-![recipe combinator screenshot](resources/screenshot-cryoplant.jpg)
+![recipe combinator screenshot](resources/screenshot-0.1.2.jpg)
 
 Features:
 
