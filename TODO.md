@@ -1,7 +1,5 @@
 # TODO
 
-* Blocking: Divide round up rounds -1/2 to +1
-
 ## Copy-paste and all that
 * Update GUI if someone pastes over the item
 * Fix rounding issues when copy-pasting a blueprint with grid coordinates

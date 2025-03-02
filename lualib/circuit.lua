@@ -555,7 +555,7 @@ local function build_sparse_matrix(args)
               {and_=true,L=EACH,NL=NRED,op="!=",R=0}
             },
             output = {{out=idx_signal,WO=NRED}},
-            green = {mod_input}, red = {negent_combi},
+            green = {mod_input}, red = {nega_ent_combi},
             description=prefix.."rup"..tostring(layer)
           }
           rucomb.get_wire_connector(ORED,true).connect_to(dotp.get_wire_connector(ORED,true))
