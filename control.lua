@@ -3,9 +3,7 @@ local tagged_entity = require "lualib.tagged_entity"
 local event = require "lualib.event"
 local gui = require "lualib.gui"
 local circuit = require "lualib.circuit"
-local disable_picker_dollies = require "lualib.disable_picker_dollies"
 local myutil = require "lualib.util"
-disable_picker_dollies.disable_picker_dollies()
 
 circuit.init()
 

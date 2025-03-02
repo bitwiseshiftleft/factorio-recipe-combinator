@@ -1,6 +1,6 @@
-VERSION=0.1.2
+VERSION=0.1.3
 MODS_DIR="$(HOME)/Library/Application Support/factorio/mods"
-FILES= info.json changelog.txt *.lua prototypes lualib graphics locale README.md resources LICENSE
+FILES= info.json changelog.txt *.lua prototypes lualib graphics locale README.md resources LICENSE thumbnail.png
 
 all: mod
 mod: build/recipe_combinator_$(VERSION).zip

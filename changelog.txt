@@ -1,5 +1,11 @@
 ---------------------------------------------------------------------------------------------------
 Version: 0.1.2
+Date: 2025-03-03
+
+  Remove disable_picker_dollies.lua.  There's no picker dollies for 2.0 anyway.
+  
+---------------------------------------------------------------------------------------------------
+Version: 0.1.2
 Date: 2025-03-02
 
   Public release.  Let me know what should be changed.
