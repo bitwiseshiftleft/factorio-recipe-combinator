@@ -340,11 +340,12 @@ register_event(defines.events.on_player_setup_blueprint, on_player_setup_bluepri
 register_event(defines.events.on_entity_settings_pasted, on_entity_settings_pasted)
 
 script.on_configuration_changed(on_configuration_changed)
-script.on_load(on_load)
+-- script.on_load(on_load)
 
 M.get_tags_mutable = get_tags_mutable
 M.get_tags = get_tags
 M.set_tags = set_tags
+M.on_load = on_load
 M.clear_tags = clear_tags
 M.add_undo_info = add_undo_info
 M.tag_handlers = tag_handlers

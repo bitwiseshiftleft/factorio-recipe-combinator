@@ -1,4 +1,12 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.1.3
+Date: 2025-03-03
+
+  Oh, there is Even Picker Dollies for 2.0, thanks @arighteousgod.
+  Restored and fixed the code so that Recipe Combinators can't be dollied.
+  (Maybe eventually, but for now it's not supported because of all the subentities)
+
+---------------------------------------------------------------------------------------------------
 Version: 0.1.2
 Date: 2025-03-03
 

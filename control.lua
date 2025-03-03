@@ -3,9 +3,16 @@ local tagged_entity = require "lualib.tagged_entity"
 local event = require "lualib.event"
 local gui = require "lualib.gui"
 local circuit = require "lualib.circuit"
+local disable_picker_dollies = require "lualib.disable_picker_dollies"
 local myutil = require "lualib.util"
 
 circuit.init()
+
+local function on_load()
+    tagged_entity.on_load()
+    disable_picker_dollies.disable_picker_dollies()
+end
+script.on_load(on_load)
 
 tagged_entity.tag_handlers["recipe-combinator-main"] = function(entity,tags)
     if tags == nil then
