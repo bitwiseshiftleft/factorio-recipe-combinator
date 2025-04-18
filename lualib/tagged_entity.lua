@@ -19,17 +19,18 @@ local function my_storage()
 end
 
 local function garbage_collect_tags()
+    if game.tick % 3600 ~= 0 then return end -- run once a minute
     local sto = my_storage()
     for u,_ in pairs(table.deepcopy(sto)) do
         if not game.get_entity_by_unit_number(u) then
             sto[u] = nil
         end
     end
-    event.unregister_event(defines.events.on_tick, garbage_collect_tags)
+    -- event.unregister_event(defines.events.on_tick, garbage_collect_tags)
 end
 
 local function on_load()
-    event.register_event(defines.events.on_tick, garbage_collect_tags)
+    -- event.register_event(defines.events.on_tick, garbage_collect_tags)
 end
 
 local function get_tags_mutable(entity)
@@ -341,6 +342,8 @@ register_event(defines.events.on_entity_settings_pasted, on_entity_settings_past
 
 script.on_configuration_changed(on_configuration_changed)
 -- script.on_load(on_load)
+
+event.register_event(defines.events.on_tick, garbage_collect_tags)
 
 M.get_tags_mutable = get_tags_mutable
 M.get_tags = get_tags

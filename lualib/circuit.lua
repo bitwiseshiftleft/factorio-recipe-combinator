@@ -955,7 +955,7 @@ local function build_recipe_info_combinator(args)
 
   local indicator = entity.surface.create_entity{
       name="recipe-combinator-component-indicator-inserter",
-      position=entity.position, entity=entity.force
+      position=entity.position, force=entity.force
   }
   indicator.inserter_filter_mode = "whitelist"
   indicator.use_filters = true
@@ -970,17 +970,19 @@ local function build_recipe_info_combinator(args)
   for _,machine in ipairs(machines) do
     local quality = nil -- TODO
     local machine_proto = prototypes.entity[machine]
-    local item_to_place = machine_proto.items_to_place_this[1]
-    if item_to_place and n_indicator < 4 then
-      -- add it to the indicator inserter
-      n_indicator=n_indicator+1
-      indicator.set_filter(n_indicator, {name=item_to_place.name, quality=quality or "normal", comparator="="})
-    end
-    for cat,_ in pairs(machine_proto.crafting_categories) do
-      if not crafting_time_scale[cat] then
-        crafting_time_scale[cat] = absolute_time_scale / machine_proto.get_crafting_speed(quality)
-        category_to_machine[cat] = (item_to_place or {}).name
-        category_to_machine_proto[cat] = machine_proto
+    if machine_proto then -- in case you are eg pasting blueprints between mods, and the machine doesn't exist
+      local item_to_place = machine_proto.items_to_place_this[1]
+      if item_to_place and n_indicator < 4 then
+        -- add it to the indicator inserter
+        n_indicator=n_indicator+1
+        indicator.set_filter(n_indicator, {name=item_to_place.name, quality=quality or "normal", comparator="="})
+      end
+      for cat,_ in pairs(machine_proto.crafting_categories) do
+        if not crafting_time_scale[cat] then
+          crafting_time_scale[cat] = absolute_time_scale / machine_proto.get_crafting_speed(quality)
+          category_to_machine[cat] = (item_to_place or {}).name
+          category_to_machine_proto[cat] = machine_proto
+        end
       end
     end
   end

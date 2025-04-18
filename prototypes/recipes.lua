@@ -1,3 +1,5 @@
+local have_cube = mods["Ultracube"] ~= nil
+
 data:extend{{
     type = "recipe",
     name = "recipe-combinator-main",
@@ -9,5 +11,6 @@ data:extend{{
         {type="item",name="constant-combinator",    amount=1}
     },
     energy_required = 30,
-    results = {{type="item", name="recipe-combinator-main", amount=1}}
+    results = {{type="item", name="recipe-combinator-main", amount=1}},
+    category = have_cube and "cube-fabricator-handcraft" or "crafting"
 }}

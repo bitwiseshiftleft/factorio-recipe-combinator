@@ -1,4 +1,23 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.1.7
+Date: 2025-04-18
+
+  Remove a crash when pasting blueprints made with a different mod config.
+
+---------------------------------------------------------------------------------------------------
+Version: 0.1.6
+Date: 2025-04-18
+
+  Ultracube compatibility
+  Possibly fix multiplayer?  Dunno, haven't tested.
+
+---------------------------------------------------------------------------------------------------
+Version: 0.1.5
+Date: 2025-03-04
+
+  Maybe-fixed a bug causing incompatibility with AAI programmable vehicles.
+
+---------------------------------------------------------------------------------------------------
 Version: 0.1.4
 Date: 2025-03-03
 

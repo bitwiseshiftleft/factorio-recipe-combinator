@@ -182,6 +182,12 @@ local function checkbox(box, load, enabled)
   return box2
 end
 
+local function is_valid_signal(sig)
+  local ty = sig.type
+  if ty == "virtual" then ty = "virtual_signal" end
+  return prototypes[ty][sig.name]
+end
+
 local function checkbox_row(args)
   local boxes = {}
   local enabled = args.zone_enabled
@@ -261,6 +267,7 @@ local function open(player_index, entity)
   local machines_outer = {type="flow",direction="vertical",children={machines_inner}}
   local rowidx,totalidx=0,0
   local function append_machine(machine)
+    if not prototypes.entity[machine] then return end
     rowidx = rowidx+1
     totalidx = totalidx+1
     if rowidx == 11 then
@@ -469,7 +476,8 @@ local function open(player_index, entity)
     [prefix.."combi_config"][prefix.."subpane_one"]
     [prefix.."show_time_pane"][prefix.."show_time_signal"]
   local sts_name = "show_time_signal"
-  if show_time_sig and sts_name and load and load[sts_name] then
+  if show_time_sig and sts_name and load and load[sts_name]
+    and is_valid_signal(load[sts_name])then
     show_time_sig.elem_value = load[sts_name]
   end
 
@@ -478,7 +486,8 @@ local function open(player_index, entity)
       [prefix.."combi_config"]
       [prefix.."show_quality_pane"][prefix.."show_quality_signal"]
     local sqs_name = "show_quality_signal"
-    if show_quality_sig and sqs_name and load and load[sqs_name] then
+    if show_quality_sig and sqs_name and load and load[sqs_name]
+      and is_valid_signal(load[sqs_name]) then
       show_quality_sig.elem_value = load[sqs_name]
     end
   end
@@ -487,7 +496,8 @@ local function open(player_index, entity)
   [prefix.."combi_config"]
   [prefix.."show_quantity_pane"][prefix.."show_quantity_signal"]
   sqs_name = "show_quantity_signal"
-  if show_quantity_sig and sqs_name and load and load[sqs_name] then
+  if show_quantity_sig and sqs_name and load and load[sqs_name]
+    and is_valid_signal(load[sqs_name]) then
     show_quantity_sig.elem_value = load[sqs_name]
   end
 
