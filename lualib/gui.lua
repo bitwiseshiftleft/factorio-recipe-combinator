@@ -267,7 +267,7 @@ local function open(player_index, entity)
   local machines_outer = {type="flow",direction="vertical",children={machines_inner}}
   local rowidx,totalidx=0,0
   local function append_machine(machine)
-    if not prototypes.entity[machine] then return end
+    if machine and not prototypes.entity[machine] then return end
     rowidx = rowidx+1
     totalidx = totalidx+1
     if rowidx == 11 then
