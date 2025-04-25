@@ -5,7 +5,12 @@
 * Fix rounding issues when copy-pasting a blueprint with grid coordinates
 * Add indicator inserters to blueprint?
 * Undo/redo paste settings
+
+## Clarity
 * Make in-game README.
+* Make tooltips for the input section at least.
+* Flesh out the package README
+* Make the screenshot smaller
 
 ## GUI and features
 * Make "show all recipes" and "show all valid" exclusive with other options?
@@ -32,10 +37,6 @@
 
 ## Py functionality
 * Update on py TURD selected and similar events that unlock recipes.
-
-## Packaging
-* Flesh out the README
-* Make the screenshot smaller
 
 ## Speculative future features
 * Deal with productivity bonuses (either inherent in the machine or with modules)
