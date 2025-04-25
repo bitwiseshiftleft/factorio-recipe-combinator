@@ -10,7 +10,7 @@ Features:
 * Output recipe ingredients, products, and crafting time.
 * Output which machine should craft the recipe.
 * Output which modules are supported by that machine/recipe.
-* OUtput all recipes supported by a certain machine, or all recipes that produce a certain product.
+* Output all recipes supported by a certain machine, or all recipes that produce a certain product.
 * Outputs can be on red or green wires, and can be optionally negated or multiplied by the input.
 * Supports quality.
 * Partially supports getting info on spoilage time and products.
