@@ -7,8 +7,7 @@
 * Undo/redo paste settings
 
 ## Clarity
-* Make in-game README.
-* Make tooltips for the input section at least.
+* Make in-game README / tips and tricks.
 * Flesh out the package README
 * Make the screenshot smaller
 
@@ -17,7 +16,6 @@
 * Right-alias support in the matrix builder
 * Could in theory do ranged right-alias support e.g. select (i,j=i+1) or whatever from one combinator and have i<=x<=j instead of i=x.  In particular this would allow "x at only normal quality" vs "x at all qualities" on adjacent indices.
 * Configurable: output all qualities when fluid output selected?
-* Configurable: only output recipes allowed on this surface.
 * Consider a flag for round up/down?  Up is nicer though because you can't round up to 0
 * Or can you?  Test negative numbers too.
 * Paste-entity-settings from a machine to a combinator, to set that machine?

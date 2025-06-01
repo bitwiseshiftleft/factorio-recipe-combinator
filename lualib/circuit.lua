@@ -694,7 +694,6 @@ local function destroy_components(entity)
   end
 end
 
-
 local function build_matrix_combinator(
   entity,
   matrix,
@@ -707,6 +706,7 @@ local function build_matrix_combinator(
   output_quantity_flags
 )
   local builder = Builder:new(entity.surface, entity.position, entity.force)
+
 
   -- Collate the matrix into a dense form
   local matrices_by_flags, valid, valid_at_all_qualities = matrix:collate()
@@ -911,12 +911,23 @@ local function build_matrix_combinator(
   end
 end
 
+local function can_craft_here(surface, recipe)
+  if surface.ignore_surface_conditions then return true end
+  for _,sc in ipairs(recipe.surface_conditions or {}) do
+    local value = surface.get_property(sc.property) or 0
+    if value < sc.min or value > sc.max then return false end
+  end
+  return true
+end
+
 local function build_recipe_info_combinator(args)
   -- parse args
   local entity                    = args.entity
+  local surface                   = entity.surface
   local force                     = entity.force
   local machines                  = args.machines or {}
 
+  local include_all_surfaces      = args.include_all_surfaces
   local output_allowed_modules    = args.output_allowed_modules
   local output_recipe_ingredients = args.output_recipe_ingredients
   local output_recipe_products    = args.output_recipe_products
@@ -1039,11 +1050,12 @@ local function build_recipe_info_combinator(args)
         string.find(name,"^parameter%-%d$") == nil
         and (is_spoilage or include_disabled or force.recipes[name].enabled)
         and (include_hidden or not recipe.hidden)
+        and (include_all_surfaces or can_craft_here(surface, recipe))
       if suitable then
         local sig = is_spoilage and {type="item",name=recipe.ingredients[1].name}
           or {type="recipe",name=recipe.name}
         local row = matrix:create_or_add_row(sig, is_spoilage or not input_recipe)
-        local scaled_time = ceil(recipe.energy * crafting_time_scale[recipe.category])
+        local scaled_time = ceil((recipe.energy or 0) * (crafting_time_scale[recipe.category] or 0))
         local ingredients = recipe.ingredients
 
         -- Are all ingredients fluid?  If so, then the recipe does not accept quality
@@ -1152,11 +1164,12 @@ end
 
 local DEFAULT_ROLLUP = {
   machines = {"assembling-machine-3"},
+  include_all_surfaces = false,
   input_recipe = false,
-  input_ingredient_group = true,
-  input_item_ingredient = true,
+  input_ingredient_group = false,
+  input_item_ingredient = false,
   input_fluid_ingredient = false,
-  input_product_group = false,
+  input_product_group = true,
   input_item_product = true,
   input_fluid_product = false,
   
@@ -1234,6 +1247,7 @@ local function rollup_state_to_build_args(entity, rollup)
     machines                    = ru.machines,
     include_disabled            = ru.include_disabled,
     include_hidden              = ru.include_hidden,
+    include_all_surfaces        = ru.include_all_surfaces,
     
     input_item_product          = ru.input_product_group and ru.input_item_product,
     input_fluid_product         = ru.input_product_group and ru.input_fluid_product,
@@ -1249,6 +1263,9 @@ local function rollup_state_to_build_args(entity, rollup)
     output_selected              = rollup_flags(ru.show_selected,false,false,
       ru.show_selected_red, ru.show_selected_green),
 
+      output_allowed_modules      =
+      rollup_flags(ru.show_modules,false,false,
+        rollup.show_modules_red, ru.show_modules_green),
     output_allowed_modules      =
       rollup_flags(ru.show_modules,false,false,
         rollup.show_modules_red, ru.show_modules_green),

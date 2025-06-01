@@ -2,7 +2,15 @@
 Version: 0.1.9
 Date: 2025-04-30
 
+  Add checkbox to include recipes for other surfaces (default off)
+    Eg if you build a combinator on Nauvis, it won't show recipes for turbo belts unless
+    you check this box.
+
   Russian locale added (by Shadow_Man)
+    Because Shadow_Man sent this in a month ago and I'm just now merging it, this
+    locale doesn't yet include localizations for new options and tooltips in this patch.
+
+  Newly built combinators now default to "input: recipe product" instead of ingredients.
 
 ---------------------------------------------------------------------------------------------------
 Version: 0.1.8

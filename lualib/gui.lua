@@ -310,14 +310,23 @@ local function open(player_index, entity)
         checkbox({name="include_disabled"},load),
         checkbox({name="include_hidden"},load)
       }},
+      {type="flow", style="recipe-combinator_checkbox_row", children={
+        checkbox({name="include_all_surfaces"},load),
+        tooltip("include_all_surfaces")
+      }},
       
       {type="line", style="recipe-combinator_section_divider_line"},
-      {type="label", caption={"recipe-combinator-gui.label_input"}, style="bold_label"},
+      {type="flow", style="recipe-combinator_label_toolip", children={
+        {type="label", caption={"recipe-combinator-gui.label_input"}, style="bold_label"},
+        tooltip("section_input")
+      }},
       checkbox_row{row={
-        { name="input_recipe", style=checkbox_header }
+        { name="input_recipe", style=checkbox_header },
+        tooltip("input_recipe")
       }, load=load},
       checkbox_row{row={
         { name="input_product_group", style=checkbox_header },
+        tooltip("input_product"),
         " ",
         { name="input_item_product" },
         " ",
@@ -325,6 +334,7 @@ local function open(player_index, entity)
       }, load=load},
       checkbox_row{row={
         { name="input_ingredient_group",style=checkbox_header },
+        tooltip("input_ingredient"),
         " ",
         { name="input_item_ingredient" },
         " ",
