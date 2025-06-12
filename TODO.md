@@ -1,5 +1,7 @@
 # TODO
 
+* Update the thumbnail image
+
 ## Copy-paste and all that
 * Update GUI if someone pastes over the item
 * Fix rounding issues when copy-pasting a blueprint with grid coordinates
@@ -9,7 +11,6 @@
 ## Clarity
 * Make in-game README / tips and tricks.
 * Flesh out the package README
-* Make the screenshot smaller
 
 ## GUI and features
 * Make "show all recipes" and "show all valid" exclusive with other options?
@@ -21,6 +22,7 @@
 * Paste-entity-settings from a machine to a combinator, to set that machine?
 * Add combinator description window.
 * Maybe some kind of alphabet combinator mode?  Eg all fluids, all items, all (unlocked) recipes, all virtual signals, all targetables, all stack sizes, etc.
+* Sectionize or otherwise hide components of the GUI.
 
 ## Lua cleanup
 * Tighten up on_died to avoid leaving dead tags in storage (currently runs once every minute or so)
