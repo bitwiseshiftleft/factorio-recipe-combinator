@@ -1,9 +1,12 @@
 ---------------------------------------------------------------------------------------------------
 Version: 0.1.10
-Date: 2025-06-xx
+Date: 2025-06-12
 
   Add an option to block recipes from the combinator.
   This allows you to e.g. ignore obsolete recipes.
+
+  Add "output recipe quantity".  Similar to "output selected signal quantity", this is in case
+  you want an "N" to immediately multiply/divide by.
 
 ---------------------------------------------------------------------------------------------------
 Version: 0.1.9
