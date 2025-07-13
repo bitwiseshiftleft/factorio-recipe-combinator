@@ -29,20 +29,14 @@
 * Separate circuit.lua from recipe combinator matrix logic
 * Add filters to events for performance
 
-## Test
-* Test test test
-* Test again with no quality
-* Test more with negative numbers.
-* Test briefly that the caching system on divmod even works
-
 ## Py functionality
 * Update on py TURD selected and similar events that unlock recipes.
 
 ## Speculative future features
 * Deal with productivity bonuses (either inherent in the machine or with modules)
+* Deal with fractional crafting ticks, which may matter for fast crafts in very fast machines (either inherent due to crafting speed, or with modules).  Eg making yellow belts in a foundry takes 7.5 ticks per belt, so if you want a lot of belts the estimate will be off if using 8.0 ticks. (thanks Gridstop)
 * Better graphics
 * Deal with spoilage time increases from quality
-* Allow to blacklist specific recipes
 * Make power consumption real?  Eh, who even cares
 * Give info about allowed fuels, or burnt fuel results.
 * Deal with probabilities

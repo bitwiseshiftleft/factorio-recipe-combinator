@@ -90,6 +90,7 @@ end
 local filters = {{filter="name", name="recipe-combinator-main"}}
 
 register_event(defines.events.on_entity_died, on_died, filters)
+register_event(defines.events.on_space_platform_mined_entity, on_died, filters)
 register_event(defines.events.on_player_mined_entity, on_died, filters)
 register_event(defines.events.on_pre_ghost_deconstructed, on_died, filters)
 register_event(defines.events.on_robot_mined_entity, on_died, filters)
