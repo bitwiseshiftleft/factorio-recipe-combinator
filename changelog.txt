@@ -1,5 +1,12 @@
 ---------------------------------------------------------------------------------------------------
 Version: 0.1.11
+Date: 2026-07-09
+
+  Partial 2.1 compatibility.  Does not yet understand probabilistic recipes, or recipes that
+  modify ingredient or output quality.
+
+---------------------------------------------------------------------------------------------------
+Version: 0.1.11
 Date: 2025-07-13
 
   Fixed a bug where combinators would not be created/destroyed correctly on space platforms.

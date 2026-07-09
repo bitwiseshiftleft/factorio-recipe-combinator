@@ -12,5 +12,5 @@ data:extend{{
     },
     energy_required = 30,
     results = {{type="item", name="recipe-combinator-main", amount=1}},
-    category = have_cube and "cube-fabricator-handcraft" or "crafting"
+    categories = {have_cube and "cube-fabricator-handcraft" or "crafting"}
 }}

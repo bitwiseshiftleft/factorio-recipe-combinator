@@ -357,7 +357,7 @@ local function cache_spoilage()
           or {},
         energy=ticks/60.,
         allowed_module_categories={},
-        category="recipe-combinator-spoilage-mechanic"
+        categories={"recipe-combinator-spoilage-mechanic"}
       }
     end
   end
@@ -984,12 +984,14 @@ local function build_recipe_info_combinator(args)
   local absolute_time_scale = 60 -- i.e. in ticks
   local category_to_machine = {}
   local category_to_machine_proto = {}
+  local machine_priorities = {}
 
   -- parse out the machines into speeds and categories
-  for _,machine in ipairs(machines) do
+  for i,machine in ipairs(machines) do
     local quality = nil -- TODO
     local machine_proto = prototypes.entity[machine]
     if machine_proto then -- in case you are eg pasting blueprints between mods, and the machine doesn't exist
+      machine_priorities[machine] = i
       local item_to_place = machine_proto.items_to_place_this[1]
       if item_to_place and n_indicator < 4 then
         -- add it to the indicator inserter
@@ -1044,6 +1046,7 @@ local function build_recipe_info_combinator(args)
 
   -- iterate through the recipes in the given categories
   for category,_ in pairs(crafting_time_scale) do
+    local prio = machine_priorities[category_to_machine[category]]
     local machine_proto=category_to_machine_proto[category]
     local machine_has_modules = machine_proto.module_inventory_size and (machine_proto.module_inventory_size>0)
     local recipes,is_spoilage
@@ -1060,11 +1063,20 @@ local function build_recipe_info_combinator(args)
         and (is_spoilage or include_disabled or force.recipes[name].enabled)
         and (include_hidden or not recipe.hidden)
         and (include_all_surfaces or can_craft_here(surface, recipe))
+
+      -- if the recipe can be crafted by an earlier machine category, don't re-include it
+      for _,cat in ipairs(recipe.categories) do
+        local prio2 = category_to_machine[cat] and machine_priorities[category_to_machine[cat]]
+        if prio2 and prio2 < prio then
+          suitable = false
+        end
+      end
+
       if suitable then
         local sig = is_spoilage and {type="item",name=recipe.ingredients[1].name}
           or {type="recipe",name=recipe.name}
         local row = matrix:create_or_add_row(sig, is_spoilage or not input_recipe)
-        local scaled_time = ceil((recipe.energy or 0) * (crafting_time_scale[recipe.category] or 0))
+        local scaled_time = ceil((recipe.energy or 0) * (crafting_time_scale[category] or 0))
         local ingredients = recipe.ingredients
 
         -- Are all ingredients fluid?  If so, then the recipe does not accept quality
