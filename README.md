@@ -1,5 +1,10 @@
 # Recipe combinator
 
+## Factorio 2.1 compatibility note
+
+This mod should mostly work on 2.1, but it doesn't yet understand recipes that change the quality of their inputs or outputs.
+
+## Introduction
 This mod is intended for people who want to make automatic malls, which can craft small amounts of many different items using only a few machines.  It adds a new type of combinator which gives a wealth of information about recipes.  I made it because I didn't like wiring up a separate assembler in the mall just so that I could use "read ingredients".  Recipe combinators can also give more information than "read ingredients", such as supported modules, crafting time, output quantity and so on.
 
 ![recipe combinator screenshot](resources/screenshot-0.1.10.png)
