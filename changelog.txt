@@ -1,6 +1,6 @@
 ---------------------------------------------------------------------------------------------------
 Version: 0.1.11
-Date: 2026-07-09
+Date: 2026-07-11
 
   Partial 2.1 compatibility.  Does not yet understand probabilistic recipes, or recipes that
   modify ingredient or output quality.
